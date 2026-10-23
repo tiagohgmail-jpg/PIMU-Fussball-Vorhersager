@@ -1,16 +1,13 @@
 
 import math
-from datetime import datetime, timezone
-
+import requests
 import numpy as np
 import pandas as pd
-import requests
 import streamlit as st
 
-
-# =========================================================
-# KICKPREDICT AI – Einstellungen
-# =========================================================
+# =====================================================
+# KICKPREDICT AI
+# =====================================================
 
 st.set_page_config(
     page_title="KickPredict AI",
@@ -32,121 +29,104 @@ LEAGUES = {
 }
 
 
-# =========================================================
-# DESIGN – gut lesbare Texte und klare Kontraste
-# =========================================================
+# =====================================================
+# DESIGN: KLARE FARBEN FÜR JEDEN BEREICH
+# =====================================================
 
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-    --background: #080d18;
+    --bg: #080d18;
     --panel: #111a2b;
-    --panel-light: #19253a;
-    --accent: #38e8a5;
-    --text: #f5f7ff;
-    --muted: #b9c5d8;
+    --panel2: #19253a;
     --border: #2a3850;
+    --white: #f5f7ff;
+    --muted: #b9c5d8;
+    --green: #38e8a5;
+    --black: #111827;
 }
 
-html, body, [class*="css"], .stApp {
+/* Hauptseite */
+html, body, .stApp {
+    background-color: var(--bg) !important;
+    color: var(--white) !important;
     font-family: 'Inter', sans-serif !important;
 }
 
-.stApp {
-    background: var(--background) !important;
-    color: var(--text) !important;
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"] {
+    background-color: var(--bg) !important;
 }
 
 [data-testid="stHeader"] {
-    background: rgba(8, 13, 24, 0.96) !important;
+    background: rgba(8, 13, 24, 0.95) !important;
 }
 
 [data-testid="stSidebar"] {
-    background: #0d1423 !important;
+    background-color: #0d1423 !important;
     border-right: 1px solid var(--border);
 }
 
+/* Normale Texte auf dunklem Hintergrund */
 [data-testid="stMarkdownContainer"],
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] li,
-[data-testid="stMarkdownContainer"] span,
 [data-testid="stMarkdownContainer"] strong,
 [data-testid="stWidgetLabel"],
 [data-testid="stWidgetLabel"] p,
-label, h1, h2, h3, h4, p {
-    color: var(--text) !important;
+h1, h2, h3, h4 {
+    color: var(--white) !important;
     opacity: 1 !important;
-}
-
-h1, h2, h3 {
-    letter-spacing: -0.5px;
-}
-
-h1 {
-    font-weight: 800 !important;
 }
 
 p, li {
     line-height: 1.65;
 }
 
-small, .muted {
+/* Karten */
+.kp-card {
+    background: var(--panel) !important;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 14px;
+    color: var(--white) !important;
+}
+
+.kp-card * {
+    color: var(--white) !important;
+}
+
+.kp-number {
+    color: var(--green) !important;
+    font-size: 27px;
+    font-weight: 800;
+}
+
+.kp-muted {
     color: var(--muted) !important;
+    font-size: 13px;
 }
 
-div[data-baseweb="select"] > div,
-div[data-baseweb="input"] > div {
-    background: var(--panel-light) !important;
-    border-color: var(--border) !important;
-    color: var(--text) !important;
-}
-
-div[data-baseweb="select"] *,
-input {
-    color: var(--text) !important;
-}
-
-div[data-baseweb="popover"],
-ul[data-testid="stSelectboxVirtualDropdown"] {
-    background: var(--panel-light) !important;
-}
-
-[role="option"] {
-    color: var(--text) !important;
-    background: var(--panel-light) !important;
-}
-
-[role="option"]:hover {
-    background: #263751 !important;
-}
-
-.stButton > button {
-    background: var(--accent) !important;
-    color: #06130e !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 800 !important;
-    min-height: 44px;
-}
-
-.stButton > button p {
-    color: #06130e !important;
-    font-weight: 800 !important;
-}
-
-.stButton > button:hover {
-    background: #75f5c2 !important;
-    border: none !important;
-}
-
+/* Hero-Bereich */
 .kp-hero {
-    background: linear-gradient(120deg, #142c35, #14203a 60%, #172b36);
+    background: linear-gradient(120deg, #142c35, #14203a, #172b36);
     border: 1px solid #2a4850;
     border-radius: 22px;
-    padding: 34px;
+    padding: 32px;
     margin-bottom: 24px;
+    color: var(--white) !important;
+}
+
+.kp-hero h1 {
+    color: #ffffff !important;
+}
+
+.kp-hero p {
+    color: #d5e1ef !important;
 }
 
 .kp-tag {
@@ -161,25 +141,146 @@ ul[data-testid="stSelectboxVirtualDropdown"] {
     margin-bottom: 14px;
 }
 
-.kp-card {
-    background: var(--panel);
+/* =================================================
+   EINGABEFELDER
+   Streamlit-Eingaben können hell oder dunkel sein.
+   Deshalb Farben für Text und Hintergrund zusammen setzen.
+   ================================================= */
+
+/* Dropdown-Feld geschlossen */
+div[data-baseweb="select"] > div {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #111827 !important;
+}
+
+/* Ausgewählter Text im Dropdown */
+div[data-baseweb="select"] > div * {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+}
+
+/* Pfeil im Dropdown */
+div[data-baseweb="select"] svg {
+    fill: #111827 !important;
+    color: #111827 !important;
+}
+
+/* Text-Eingabefelder */
+div[data-baseweb="input"] > div,
+div[data-baseweb="textarea"] > div {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+}
+
+div[data-baseweb="input"] input,
+div[data-baseweb="textarea"] textarea,
+input, textarea {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+    caret-color: #111827 !important;
+}
+
+/* Platzhalter in Eingabefeldern */
+input::placeholder,
+textarea::placeholder {
+    color: #64748b !important;
+    -webkit-text-fill-color: #64748b !important;
+}
+
+/* Dropdown-Auswahlliste */
+div[data-baseweb="popover"],
+div[data-baseweb="menu"],
+ul[data-testid="stSelectboxVirtualDropdown"] {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
+div[data-baseweb="popover"] *,
+div[data-baseweb="menu"] *,
+[role="option"] {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+}
+
+[role="option"] {
+    background-color: #ffffff !important;
+}
+
+[role="option"]:hover,
+[aria-selected="true"] {
+    background-color: #e2e8f0 !important;
+    color: #111827 !important;
+}
+
+/* Beschriftungen oberhalb der Felder */
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] p {
+    color: var(--white) !important;
+}
+
+/* Radio-Buttons und Checkboxen */
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label {
+    color: var(--white) !important;
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: var(--green) !important;
+    color: #06130e !important;
+    border: none !important;
+    border-radius: 10px !important;
+    min-height: 44px;
+    font-weight: 800 !important;
+}
+
+.stButton > button *,
+.stButton > button p {
+    color: #06130e !important;
+    -webkit-text-fill-color: #06130e !important;
+    font-weight: 800 !important;
+}
+
+.stButton > button:hover {
+    background-color: #75f5c2 !important;
+}
+
+/* Metriken */
+[data-testid="stMetric"] {
+    background: var(--panel) !important;
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 14px;
+    border-radius: 14px;
+    padding: 16px;
 }
 
-.kp-number {
-    font-size: 27px;
-    font-weight: 800;
-    color: var(--accent) !important;
-}
-
-.kp-muted {
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] * {
     color: var(--muted) !important;
-    font-size: 13px;
 }
 
+[data-testid="stMetricValue"],
+[data-testid="stMetricValue"] * {
+    color: var(--green) !important;
+}
+
+/* Fortschrittsbalken */
+[data-testid="stProgress"] {
+    background-color: var(--panel2) !important;
+}
+
+/* Meldungen */
+[data-testid="stAlert"] {
+    border-radius: 12px;
+}
+
+/* Trennlinien */
+hr {
+    border-color: var(--border) !important;
+}
+
+/* Footer */
 .kp-footer {
     color: var(--muted) !important;
     text-align: center;
@@ -188,21 +289,16 @@ ul[data-testid="stSelectboxVirtualDropdown"] {
     margin-top: 35px;
 }
 
-[data-testid="stAlert"] * {
-    color: inherit;
+.kp-footer * {
+    color: var(--muted) !important;
 }
-
-hr {
-    border-color: var(--border) !important;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
 
-# =========================================================
-# DATEN LADEN
-# =========================================================
+# =====================================================
+# API: HISTORISCHE SPIELE LADEN
+# =====================================================
 
 @st.cache_data(ttl=21600, show_spinner=False)
 def load_matches(league_id, api_key):
@@ -249,8 +345,7 @@ def load_matches(league_id, api_key):
                 away_goals = goals.get("away")
 
                 if (
-                    home
-                    and away
+                    home and away
                     and home_goals is not None
                     and away_goals is not None
                 ):
@@ -280,19 +375,18 @@ def load_matches(league_id, api_key):
     return df, errors
 
 
-# =========================================================
-# MODELL – GEWICHTETE TEAMSTATISTIK
-# =========================================================
+# =====================================================
+# STATISTIK UND PROGNOSE
+# =====================================================
 
 def weighted_average(values, dates, reference_date):
     values = np.asarray(values, dtype=float)
-
     dates = pd.to_datetime(dates, utc=True)
+
     age_days = (
         reference_date - dates
     ).dt.total_seconds().to_numpy() / 86400
 
-    # Neuere Spiele erhalten mehr Gewicht.
     weights = np.exp(
         -np.maximum(age_days, 0) * math.log(2) / 240
     )
@@ -318,16 +412,13 @@ def team_statistics(df, team, venue, reference_date):
     if len(games) < 3:
         return None
 
-    scored = weighted_average(
-        games[scored_col], games["Datum"], reference_date
-    )
-    conceded = weighted_average(
-        games[conceded_col], games["Datum"], reference_date
-    )
-
     return {
-        "scored": scored,
-        "conceded": conceded,
+        "scored": weighted_average(
+            games[scored_col], games["Datum"], reference_date
+        ),
+        "conceded": weighted_average(
+            games[conceded_col], games["Datum"], reference_date
+        ),
         "games": len(games),
     }
 
@@ -363,7 +454,7 @@ def predict_match(df, home_team, away_team):
     avg_away = float(df["Tore_Auswärts"].mean())
 
     if avg_home <= 0 or avg_away <= 0:
-        raise ValueError("Die Liga-Daten sind unvollständig.")
+        raise ValueError("Die Ligadaten sind unvollständig.")
 
     home_attack = np.clip(
         home_stats["scored"] / avg_home, 0.45, 1.8
@@ -371,7 +462,6 @@ def predict_match(df, home_team, away_team):
     away_defence = np.clip(
         away_stats["conceded"] / avg_home, 0.45, 1.8
     )
-
     away_attack = np.clip(
         away_stats["scored"] / avg_away, 0.45, 1.8
     )
@@ -412,28 +502,24 @@ def predict_match(df, home_team, away_team):
     if total <= 0:
         raise ValueError("Die Berechnung ist fehlgeschlagen.")
 
-    home_win = home_win / total * 100
-    draw = draw / total * 100
-    away_win = away_win / total * 100
-
-    most_likely = max(score_probs, key=lambda item: item[2])
+    best_score = max(score_probs, key=lambda item: item[2])
 
     return {
-        "home": home_win,
-        "draw": draw,
-        "away": away_win,
+        "home": home_win / total * 100,
+        "draw": draw / total * 100,
+        "away": away_win / total * 100,
         "expected_home": expected_home,
         "expected_away": expected_away,
-        "score": f"{most_likely[0]} : {most_likely[1]}",
+        "score": f"{best_score[0]} : {best_score[1]}",
         "home_games": home_stats["games"],
         "away_games": away_stats["games"],
         "last_date": df["Datum"].max(),
     }
 
 
-# =========================================================
-# KOPFZEILE UND NAVIGATION
-# =========================================================
+# =====================================================
+# NAVIGATION
+# =====================================================
 
 with st.sidebar:
     st.markdown(
@@ -447,16 +533,15 @@ with st.sidebar:
     page = st.radio(
         "Navigation",
         ["Home", "Spielprognose", "Über uns"],
-        label_visibility="visible",
     )
 
     st.divider()
     st.caption("Erstellt von Tiago Faruk und Yigit")
 
 
-# =========================================================
+# =====================================================
 # HOME
-# =========================================================
+# =====================================================
 
 if page == "Home":
     st.markdown("""
@@ -465,9 +550,9 @@ if page == "Home":
         <h1 style="font-size:42px; margin:0;">
             KickPredict AI
         </h1>
-        <p style="font-size:18px; color:#d5e1ef !important;">
-            Daten analysieren. Spiele besser einschätzen.
-            Fussball verstehen.
+        <p style="font-size:18px;">
+            Spiele analysieren. Wahrscheinlichkeiten verstehen.
+            Fussball datenbasiert einschätzen.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -476,24 +561,24 @@ if page == "Home":
 
     st.write(
         "KickPredict AI analysiert historische Spielergebnisse "
-        "und berechnet daraus Wahrscheinlichkeiten für "
-        "Heimsieg, Unentschieden und Auswärtssieg."
+        "und berechnet Wahrscheinlichkeiten für Heimsieg, "
+        "Unentschieden und Auswärtssieg."
     )
 
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    with col1:
+    with c1:
         st.markdown("""
         <div class="kp-card">
             <div class="kp-number">1X2</div>
             <b>Spielprognosen</b>
             <p class="kp-muted">
-                Drei mögliche Ausgänge eines Spiels vergleichen.
+                Drei mögliche Spielausgänge vergleichen.
             </p>
         </div>
         """, unsafe_allow_html=True)
 
-    with col2:
+    with c2:
         st.markdown("""
         <div class="kp-card">
             <div class="kp-number">⚽</div>
@@ -504,7 +589,7 @@ if page == "Home":
         </div>
         """, unsafe_allow_html=True)
 
-    with col3:
+    with c3:
         st.markdown("""
         <div class="kp-card">
             <div class="kp-number">📊</div>
@@ -516,25 +601,20 @@ if page == "Home":
         """, unsafe_allow_html=True)
 
     st.info(
-        "Die Prognosen sind Schätzungen und keine sicheren "
-        "Ergebnisse. Die Genauigkeit muss mit echten "
-        "Spielresultaten getestet werden."
+        "Die Prognosen sind Schätzungen. Eine bestimmte "
+        "Trefferquote kann nicht garantiert werden."
     )
 
-    if st.button("⚽ Jetzt Spiele analysieren", use_container_width=True):
-        st.session_state["page_jump"] = True
-        st.rerun()
 
-
-# =========================================================
+# =====================================================
 # SPIELPROGNOSE
-# =========================================================
+# =====================================================
 
 elif page == "Spielprognose":
     st.title("⚽ Spielprognose")
     st.write(
-        "Wähle eine Liga und zwei Teams. KickPredict berechnet "
-        "anschliessend die Wahrscheinlichkeiten."
+        "Wähle eine Liga und zwei Teams, um eine "
+        "statistische Prognose zu berechnen."
     )
 
     try:
@@ -544,8 +624,8 @@ elif page == "Spielprognose":
 
     if not api_key:
         st.error(
-            "Der API-Schlüssel fehlt. Füge in Streamlit unter "
-            "Settings → Secrets deinen API_FOOTBALL_KEY ein."
+            "API-Schlüssel nicht gefunden. Öffne Streamlit "
+            "Settings → Secrets und prüfe API_FOOTBALL_KEY."
         )
     else:
         selected_league = st.selectbox(
@@ -553,23 +633,25 @@ elif page == "Spielprognose":
             list(LEAGUES.keys()),
         )
 
-        league_id = LEAGUES[selected_league]
+        if st.button("📥 Ligadaten neu laden", use_container_width=True):
+            load_matches.clear()
+            st.session_state.pop("prediction", None)
+            st.rerun()
 
-        if st.button("📥 Ligadaten laden", use_container_width=True):
-            st.cache_data.clear()
-
-        with st.spinner("Historische Spielergebnisse werden geladen..."):
-            matches, errors = load_matches(league_id, api_key)
+        with st.spinner("Historische Spiele werden geladen..."):
+            matches, errors = load_matches(
+                LEAGUES[selected_league], api_key
+            )
 
         if errors:
-            with st.expander("Details zu Datenmeldungen"):
+            with st.expander("Datenmeldungen anzeigen"):
                 for error in errors:
                     st.write(error)
 
         if matches.empty:
             st.warning(
-                "Keine verwendbaren Daten erhalten. Prüfe deinen "
-                "API-Schlüssel und die verfügbaren Saisons."
+                "Keine Daten verfügbar. Prüfe den API-Schlüssel "
+                "und die verfügbaren Saisons."
             )
         else:
             min_date = matches["Datum"].min().strftime("%d.%m.%Y")
@@ -581,7 +663,7 @@ elif page == "Spielprognose":
                     <b>{selected_league}</b>
                     <p class="kp-muted">
                         {len(matches)} historische Spiele ·
-                        Datenzeitraum {min_date} bis {max_date}
+                        Zeitraum {min_date} bis {max_date}
                     </p>
                 </div>
                 """,
@@ -598,20 +680,24 @@ elif page == "Spielprognose":
                 home_team = st.selectbox(
                     "🏠 Heimteam",
                     teams,
-                    index=0,
                     key="home_team",
                 )
 
+            away_options = [
+                team for team in teams if team != home_team
+            ]
+
             with col2:
-                away_options = [team for team in teams if team != home_team]
                 away_team = st.selectbox(
                     "✈️ Auswärtsteam",
                     away_options,
-                    index=0,
                     key="away_team",
                 )
 
-            if st.button("🔮 Prognose berechnen", use_container_width=True):
+            if st.button(
+                "🔮 Prognose berechnen",
+                use_container_width=True,
+            ):
                 try:
                     result = predict_match(
                         matches, home_team, away_team
@@ -630,34 +716,53 @@ elif page == "Spielprognose":
             if (
                 prediction
                 and prediction["league"] == selected_league
-                and prediction["home_team"] in teams
-                and prediction["away_team"] in teams
+                and prediction["home_team"] == home_team
+                and prediction["away_team"] == away_team
             ):
                 result = prediction["result"]
 
                 st.divider()
                 st.subheader("📊 Ergebnis der Analyse")
                 st.markdown(
-                    f"### {prediction['home_team']} vs. "
-                    f"{prediction['away_team']}"
+                    f"### {home_team} vs. {away_team}"
                 )
 
                 c1, c2, c3 = st.columns(3)
 
                 with c1:
-                    st.metric("Heimsieg (1)", f"{result['home']:.1f}%")
+                    st.metric(
+                        "Heimsieg (1)",
+                        f"{result['home']:.1f}%",
+                    )
+
                 with c2:
-                    st.metric("Unentschieden (X)", f"{result['draw']:.1f}%")
+                    st.metric(
+                        "Unentschieden (X)",
+                        f"{result['draw']:.1f}%",
+                    )
+
                 with c3:
-                    st.metric("Auswärtssieg (2)", f"{result['away']:.1f}%")
+                    st.metric(
+                        "Auswärtssieg (2)",
+                        f"{result['away']:.1f}%",
+                    )
 
                 st.markdown("#### Wahrscheinlichkeiten")
+
                 st.progress(int(round(result["home"])))
-                st.caption(f"1 · Heimsieg: {result['home']:.1f}%")
+                st.caption(
+                    f"1 · Heimsieg: {result['home']:.1f}%"
+                )
+
                 st.progress(int(round(result["draw"])))
-                st.caption(f"X · Unentschieden: {result['draw']:.1f}%")
+                st.caption(
+                    f"X · Unentschieden: {result['draw']:.1f}%"
+                )
+
                 st.progress(int(round(result["away"])))
-                st.caption(f"2 · Auswärtssieg: {result['away']:.1f}%")
+                st.caption(
+                    f"2 · Auswärtssieg: {result['away']:.1f}%"
+                )
 
                 a, b, c = st.columns(3)
 
@@ -665,7 +770,9 @@ elif page == "Spielprognose":
                     st.markdown(
                         f"""
                         <div class="kp-card">
-                            <div class="kp-muted">Erwartete Tore Heim</div>
+                            <div class="kp-muted">
+                                Erwartete Tore Heim
+                            </div>
                             <div class="kp-number">
                                 {result['expected_home']:.2f}
                             </div>
@@ -678,7 +785,9 @@ elif page == "Spielprognose":
                     st.markdown(
                         f"""
                         <div class="kp-card">
-                            <div class="kp-muted">Erwartete Tore Auswärts</div>
+                            <div class="kp-muted">
+                                Erwartete Tore Auswärts
+                            </div>
                             <div class="kp-number">
                                 {result['expected_away']:.2f}
                             </div>
@@ -691,7 +800,9 @@ elif page == "Spielprognose":
                     st.markdown(
                         f"""
                         <div class="kp-card">
-                            <div class="kp-muted">Wahrscheinlichstes Resultat</div>
+                            <div class="kp-muted">
+                                Wahrscheinlichstes Resultat
+                            </div>
                             <div class="kp-number">
                                 {result['score']}
                             </div>
@@ -701,20 +812,19 @@ elif page == "Spielprognose":
                     )
 
                 st.caption(
-                    "Grundlage: bis zu 12 jüngste verfügbare Heimspiele "
-                    "und Auswärtsspiele je Team. Die Daten können veraltet "
-                    "sein; das Modell garantiert keine Trefferquote."
+                    "Das Modell nutzt historische Daten und bis zu "
+                    "12 verfügbare Heim- bzw. Auswärtsspiele je Team."
                 )
 
                 st.warning(
-                    "Hinweis: Die Prozentwerte sind Modellschätzungen, "
-                    "keine Gewinnchancen und keine Garantie für das Resultat."
+                    "Die Werte sind statistische Schätzungen, "
+                    "keine Garantie für den tatsächlichen Spielausgang."
                 )
 
 
-# =========================================================
+# =====================================================
 # ÜBER UNS
-# =========================================================
+# =====================================================
 
 elif page == "Über uns":
     st.title("Über KickPredict AI")
@@ -723,10 +833,9 @@ elif page == "Über uns":
     <div class="kp-hero">
         <div class="kp-tag">UNSER PROJEKT</div>
         <h1>Fussball trifft Datenanalyse.</h1>
-        <p style="color:#d5e1ef !important;">
-            KickPredict AI ist ein Projekt, das historische
-            Fussballresultate nutzt, um mögliche Spielausgänge
-            besser einzuschätzen.
+        <p>
+            KickPredict AI nutzt historische Spielergebnisse,
+            um mögliche Fussballresultate statistisch einzuschätzen.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -735,16 +844,16 @@ elif page == "Über uns":
 
     st.write(
         "Die Website berechnet Wahrscheinlichkeiten für Heimsieg, "
-        "Unentschieden und Auswärtssieg. Zusätzlich schätzt sie die "
-        "erwarteten Tore und zeigt ein mögliches Resultat an."
+        "Unentschieden und Auswärtssieg. Sie schätzt auch die "
+        "erwarteten Tore und zeigt ein mögliches Resultat."
     )
 
     st.subheader("Wie funktioniert die Prognose?")
 
     st.write(
         "Das Modell vergleicht historische Tore der Teams und "
-        "berücksichtigt dabei Heim- und Auswärtsspiele. Neuere "
-        "Spiele werden stärker gewichtet. Daraus werden mit einem "
+        "berücksichtigt Heim- und Auswärtsspiele. Neuere Spiele "
+        "werden stärker gewichtet. Anschliessend werden mit einem "
         "Poisson-Modell Wahrscheinlichkeiten berechnet."
     )
 
@@ -762,24 +871,24 @@ elif page == "Über uns":
     st.subheader("Unsere Ziele")
 
     st.write(
-        "Wir möchten eine übersichtliche Fussballanalyse anbieten "
-        "und das Modell mit mehr Daten und Tests laufend verbessern."
+        "Wir möchten die Website übersichtlich gestalten und "
+        "das Modell mit mehr Daten und Tests weiter verbessern."
     )
 
     st.info(
-        "Transparenz: Eine hohe Trefferquote ist nicht garantiert. "
-        "Die Leistung muss anhand vergangener Spiele überprüft werden."
+        "Eine hohe Trefferquote ist nicht garantiert. Die "
+        "Leistung muss anhand echter Spielresultate getestet werden."
     )
 
 
-# =========================================================
+# =====================================================
 # FOOTER
-# =========================================================
+# =====================================================
 
 st.markdown("""
 <div class="kp-footer">
     <b>KickPredict AI</b><br>
     Erstellt von Tiago Faruk und Yigit<br>
-    <span>Fussballprognosen · Datenanalyse · 2026</span>
+    Fussballprognosen · Datenanalyse · 2026
 </div>
 """, unsafe_allow_html=True)
