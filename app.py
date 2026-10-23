@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 import requests
 import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 
 API_URL = "https://v3.football.api-sports.io"
 START_YEAR = 2022
@@ -20,6 +22,14 @@ LEAGUES = {
     "Europa League 🌍": 3,
     "Super League 🇨🇭": 207,
 }
+
+GREEN = "#4be0a0"
+GREEN_LIGHT = "#85f3be"
+DARK = "#122238"
+DARKER = "#0b192a"
+TEXT = "#f4f7fb"
+MUTED = "#aebfd2"
+GRID = "#293f58"
 
 st.set_page_config(
     page_title="KickPredict AI",
@@ -39,7 +49,8 @@ st.markdown("""
     background: #07111e;
     border-right: 1px solid #21364b;
 }
-[data-testid="stSidebar"] p {
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label {
     color: #c2d0df;
 }
 .hero {
@@ -53,6 +64,7 @@ st.markdown("""
     font-size: 42px;
     font-weight: 850;
     margin-bottom: 8px;
+    color: #f4f7fb;
 }
 .hero p {
     color: #d2e2ee;
@@ -108,8 +120,161 @@ div.stButton > button:hover {
 hr {
     border-color: #273d53;
 }
+h1, h2, h3, h4, p, label {
+    color: #f4f7fb;
+}
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {
+    border: 1px solid #293f58;
+    border-radius: 12px;
+}
+[data-testid="stAlert"] {
+    background: #14263a;
+    border: 1px solid #293f58;
+    border-radius: 12px;
+}
 </style>
 """, unsafe_allow_html=True)
+
+
+# ---------- DUNKLE DIAGRAMME ----------
+def dark_bar_chart(data, title=None, x_title=None, y_title=None,
+                   horizontal=False, color=GREEN):
+    """Erstellt ein Diagramm im dunklen KickPredict-Design."""
+    if isinstance(data, pd.Series):
+        chart_df = data.rename("Wert").reset_index()
+        chart_df.columns = ["Kategorie", "Wert"]
+    else:
+        chart_df = data.reset_index()
+        first_column = chart_df.columns[0]
+        chart_df = chart_df.rename(columns={first_column: "Kategorie"})
+
+    if horizontal:
+        fig = px.bar(
+            chart_df,
+            x=chart_df.columns[-1],
+            y="Kategorie",
+            orientation="h",
+            title=title,
+            color_discrete_sequence=[color],
+            text=chart_df.columns[-1],
+        )
+        fig.update_traces(
+            texttemplate="%{text:.2f}",
+            textposition="outside",
+            cliponaxis=False,
+            marker_line_width=0,
+        )
+    else:
+        value_columns = [
+            col for col in chart_df.columns if col != "Kategorie"
+        ]
+        fig = go.Figure()
+
+        for i, column in enumerate(value_columns):
+            series_color = GREEN if i == 0 else "#52a8ff"
+            fig.add_trace(go.Bar(
+                x=chart_df["Kategorie"],
+                y=chart_df[column],
+                name=str(column),
+                marker_color=series_color,
+                marker_line_width=0,
+                text=chart_df[column],
+                texttemplate="%{text:.2f}",
+                textposition="outside",
+                cliponaxis=False,
+            ))
+
+        fig.update_layout(barmode="group")
+
+    fig.update_layout(
+        title=dict(
+            text=title or "",
+            font=dict(color=TEXT, size=18),
+            x=0.02,
+        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=DARK,
+        font=dict(
+            family="Arial, sans-serif",
+            color=TEXT,
+            size=12,
+        ),
+        margin=dict(l=18, r=28, t=55 if title else 25, b=45),
+        height=390,
+        legend=dict(
+            font=dict(color=TEXT),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        xaxis=dict(
+            title=x_title,
+            color=MUTED,
+            gridcolor=GRID,
+            linecolor=GRID,
+            tickfont=dict(color=MUTED),
+            zerolinecolor=GRID,
+        ),
+        yaxis=dict(
+            title=y_title,
+            color=MUTED,
+            gridcolor=GRID,
+            linecolor=GRID,
+            tickfont=dict(color=MUTED),
+            zerolinecolor=GRID,
+        ),
+        hoverlabel=dict(
+            bgcolor="#07111e",
+            font_color=TEXT,
+            bordercolor=GREEN,
+        ),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def dark_outcome_chart(labels, values, title):
+    """Einheitliche grüne Ergebnisbalken mit Prozent- oder Zahlenwerten."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=labels,
+        y=values,
+        marker=dict(
+            color=[GREEN, "#6bbf9a", "#328c6a"][:len(labels)],
+            line=dict(width=0),
+        ),
+        text=[
+            f"{v:.1f}%" if title == "Spielprognose" else f"{v:,.0f}".replace(",", ".")
+            for v in values
+        ],
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="%{x}: %{y:.1f}<extra></extra>",
+    ))
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(color=TEXT, size=18), x=0.02),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=DARK,
+        font=dict(color=TEXT, family="Arial, sans-serif"),
+        margin=dict(l=18, r=25, t=55, b=45),
+        height=360,
+        showlegend=False,
+        xaxis=dict(
+            color=MUTED,
+            gridcolor=GRID,
+            linecolor=GRID,
+            tickfont=dict(color=MUTED),
+        ),
+        yaxis=dict(
+            color=MUTED,
+            gridcolor=GRID,
+            linecolor=GRID,
+            rangemode="tozero",
+        ),
+        hoverlabel=dict(bgcolor="#07111e", font_color=TEXT),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # ---------- API ----------
@@ -441,7 +606,7 @@ if not api_key:
     st.stop()
 
 
-# Home braucht keine API-Anfrage.
+# ---------- HOME ----------
 if page == "🏠 Home":
     st.markdown("""
     <div class="hero">
@@ -460,8 +625,8 @@ if page == "🏠 Home":
         metric("Wettbewerbe", str(len(LEAGUES)), "Internationale Ligen")
 
     st.markdown("### Entdecke die Plattform")
-
     a, b = st.columns(2)
+
     with a:
         st.markdown("""
         <div class="panel">
@@ -469,8 +634,6 @@ if page == "🏠 Home":
             Vergleiche zwei Teams und berechne Wahrscheinlichkeiten
             für die drei möglichen Spielausgänge.
         </div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
         <div class="panel">
             <h3>📊 Statistiken</h3>
             Entdecke Tore, Resultate, Siege und Unentschieden
@@ -484,8 +647,6 @@ if page == "🏠 Home":
             <h3>🧠 Team-Analyse</h3>
             Prüfe die letzten Leistungen sowie Heim- und Auswärtsform.
         </div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
         <div class="panel">
             <h3>📅 Ergebnisse</h3>
             Durchsuche die zuletzt geladenen abgeschlossenen Spiele.
@@ -496,7 +657,6 @@ if page == "🏠 Home":
         "Die Berechnungen basieren auf historischen Resultaten. "
         "Eine bestimmte Trefferquote wird nicht garantiert."
     )
-
 
 else:
     st.markdown(f"""
@@ -557,6 +717,7 @@ else:
         col1, col2 = st.columns(2)
         with col1:
             home_team = st.selectbox("Heimteam", teams, key="predict_home")
+
         away_options = [t for t in teams if t != home_team]
         with col2:
             away_team = st.selectbox("Auswärtsteam", away_options, key="predict_away")
@@ -584,15 +745,15 @@ else:
             with c:
                 metric("Auswärtssieg", f"{result['away'] * 100:.1f}%")
 
-            chart = pd.DataFrame({
-                "Ausgang": ["Heimsieg", "Unentschieden", "Auswärtssieg"],
-                "Wahrscheinlichkeit (%)": [
+            dark_outcome_chart(
+                ["Heimsieg", "Unentschieden", "Auswärtssieg"],
+                [
                     result["home"] * 100,
                     result["draw"] * 100,
                     result["away"] * 100,
                 ],
-            }).set_index("Ausgang")
-            st.bar_chart(chart)
+                "Spielprognose",
+            )
 
             a, b = st.columns(2)
             with a:
@@ -643,8 +804,13 @@ else:
                     away_stats["gegentreffer"] if away_stats else 0,
                     away_stats["spiele"] if away_stats else 0,
                 ],
-            }).set_index("Kategorie")
-            st.bar_chart(comparison)
+            })
+
+            dark_bar_chart(
+                comparison,
+                title="Heim- und Auswärtsvergleich",
+                horizontal=True,
+            )
 
             with st.expander("Letzte Resultate dieses Teams"):
                 team_games = df[
@@ -675,18 +841,21 @@ else:
         with c:
             metric("Tore pro Spiel", f"{total_goals / len(df):.2f}")
         with d:
-            metric("Heimsiegquote", f"{(df['Tore_Heim'] > df['Tore_Auswärts']).mean() * 100:.1f}%")
+            metric(
+                "Heimsiegquote",
+                f"{(df['Tore_Heim'] > df['Tore_Auswärts']).mean() * 100:.1f}%",
+            )
 
         st.markdown("### Verteilung der Spielausgänge")
         home_wins = int((df["Tore_Heim"] > df["Tore_Auswärts"]).sum())
         draws = int((df["Tore_Heim"] == df["Tore_Auswärts"]).sum())
         away_wins = int((df["Tore_Heim"] < df["Tore_Auswärts"]).sum())
 
-        outcomes = pd.DataFrame({
-            "Ausgang": ["Heimsieg", "Unentschieden", "Auswärtssieg"],
-            "Spiele": [home_wins, draws, away_wins],
-        }).set_index("Ausgang")
-        st.bar_chart(outcomes)
+        dark_outcome_chart(
+            ["Heimsieg", "Unentschieden", "Auswärtssieg"],
+            [home_wins, draws, away_wins],
+            "Verteilung der Spielausgänge",
+        )
 
         st.markdown("### Teams mit den meisten erzielten Toren")
         home_totals = df.groupby("Heim")["Tore_Heim"].sum()
@@ -694,7 +863,37 @@ else:
         total_by_team = home_totals.add(away_totals, fill_value=0)
         top_teams = total_by_team.sort_values(ascending=False).head(10)
 
-        st.bar_chart(top_teams)
+        top_df = top_teams.rename("Tore").reset_index()
+        top_df.columns = ["Team", "Tore"]
+
+        fig = px.bar(
+            top_df.sort_values("Tore"),
+            x="Tore",
+            y="Team",
+            orientation="h",
+            text="Tore",
+            color_discrete_sequence=[GREEN],
+        )
+        fig.update_traces(
+            textposition="outside",
+            marker_line_width=0,
+            cliponaxis=False,
+        )
+        fig.update_layout(
+            title=dict(
+                text="Top 10 Teams nach Toren",
+                font=dict(color=TEXT, size=18),
+                x=0.02,
+            ),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor=DARK,
+            font=dict(color=TEXT),
+            margin=dict(l=18, r=35, t=55, b=30),
+            height=450,
+            xaxis=dict(color=MUTED, gridcolor=GRID, linecolor=GRID),
+            yaxis=dict(color=MUTED, gridcolor=GRID, linecolor=GRID),
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("### Spiele nach Saison")
         season_summary = df.groupby("Saison").agg(
@@ -719,7 +918,9 @@ else:
 
         season_filter = st.selectbox(
             "Saison filtern",
-            ["Alle Saisons"] + [str(y) for y in sorted(df["Saison"].unique(), reverse=True)],
+            ["Alle Saisons"] + [
+                str(y) for y in sorted(df["Saison"].unique(), reverse=True)
+            ],
             key="results_season",
         )
 
