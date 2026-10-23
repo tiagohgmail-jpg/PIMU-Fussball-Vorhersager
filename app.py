@@ -1,26 +1,22 @@
 
 import math
-import time
-from datetime import datetime, timezone, timedelta
-
 import pandas as pd
 import requests
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-API_URL = "https://v3.football.api-sports.io"
-START_YEAR = 2022
+SPORTSCORE_URL = "https://sportscore.com/api/widget/matches/"
 
 LEAGUES = {
-    "Premier League 🇬🇧": 39,
-    "La Liga 🇪🇸": 140,
-    "Bundesliga 🇩🇪": 78,
-    "Serie A 🇮🇹": 135,
-    "Ligue 1 🇫🇷": 61,
-    "Champions League 🏆": 2,
-    "Europa League 🌍": 3,
-    "Super League 🇨🇭": 207,
+    "Premier League 🇬🇧": "Premier League",
+    "La Liga 🇪🇸": "La Liga",
+    "Bundesliga 🇩🇪": "Bundesliga",
+    "Serie A 🇮🇹": "Serie A",
+    "Ligue 1 🇫🇷": "Ligue 1",
+    "Champions League 🏆": "Champions League",
+    "Europa League 🌍": "Europa League",
+    "Super League 🇨🇭": "Swiss Super League",
 }
 
 GREEN = "#4be0a0"
@@ -38,24 +34,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---------- DESIGN: DUNKLER HINTERGRUND OHNE WEISSEN KOPFBEREICH ----------
+# ---------- DESIGN ----------
 st.markdown("""
 <style>
-/* Gesamte Website */
 .stApp,
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"],
 [data-testid="stMainBlockContainer"] {
-    background: linear-gradient(
-        135deg,
-        #07111f 0%,
-        #0b192a 55%,
-        #102a36 100%
-    ) !important;
+    background: linear-gradient(135deg,#07111f 0%,#0b192a 55%,#102a36 100%) !important;
     color: #f4f7fb !important;
 }
-
-/* Streamlit-Kopfbereich */
 [data-testid="stHeader"],
 [data-testid="stHeader"] > div,
 header[data-testid="stHeader"] {
@@ -63,65 +51,50 @@ header[data-testid="stHeader"] {
     background-color: #07111f !important;
     color: #f4f7fb !important;
 }
-
-/* Toolbar und Aktionen oben */
 [data-testid="stToolbar"],
 [data-testid="stDecoration"],
 [data-testid="stStatusWidget"],
 [data-testid="stDeployButton"] {
     background: transparent !important;
 }
-
-/* Falls Streamlit oben einen zusätzlichen weissen Streifen zeichnet */
 .stApp > header,
 .stApp header,
 [data-testid="stAppViewContainer"] > header {
     background: transparent !important;
     box-shadow: none !important;
 }
-
-/* Oberen Abstand verkleinern */
 [data-testid="stMainBlockContainer"] {
     padding-top: 1rem !important;
 }
-
-/* Sidebar */
 [data-testid="stSidebar"] {
     background: #07111e !important;
     border-right: 1px solid #21364b;
 }
-
 [data-testid="stSidebar"] > div {
     background: #07111e !important;
 }
-
 [data-testid="stSidebar"] p,
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] span {
     color: #c2d0df;
 }
-
-/* Hero-Bereich */
 .hero {
     padding: 30px;
     border-radius: 20px;
-    background: linear-gradient(115deg, #142943, #12513f);
+    background: linear-gradient(115deg,#142943,#12513f);
     border: 1px solid #315b68;
     margin-bottom: 22px;
 }
-
 .hero h1 {
     font-size: 42px;
     font-weight: 850;
     margin-bottom: 8px;
     color: #f4f7fb !important;
 }
-
 .hero p {
     color: #d2e2ee !important;
     font-size: 17px;
 }
-
 .eyebrow {
     color: #63edaf !important;
     text-transform: uppercase;
@@ -129,8 +102,6 @@ header[data-testid="stHeader"] {
     letter-spacing: 2px;
     font-size: 12px;
 }
-
-/* Inhaltskarten */
 .panel {
     background: #122238;
     border: 1px solid #293f58;
@@ -138,34 +109,27 @@ header[data-testid="stHeader"] {
     padding: 18px;
     margin-bottom: 12px;
 }
-
-/* Kennzahlen */
 .metric {
-    background: linear-gradient(145deg, #152940, #101e31);
+    background: linear-gradient(145deg,#152940,#101e31);
     border: 1px solid #2b435e;
     border-radius: 15px;
     padding: 18px;
     min-height: 115px;
 }
-
 .metric-label {
     color: #aebfd2 !important;
     font-size: 13px;
 }
-
 .metric-value {
     color: #5ce6a6 !important;
     font-size: 28px;
     font-weight: 850;
     margin-top: 5px;
 }
-
 .muted {
     color: #aebfd2 !important;
     font-size: 13px;
 }
-
-/* Buttons */
 div.stButton > button {
     background: #4be0a0 !important;
     color: #07131c !important;
@@ -174,13 +138,10 @@ div.stButton > button {
     font-weight: 800 !important;
     min-height: 43px;
 }
-
 div.stButton > button:hover {
     background: #85f3be !important;
     color: #07131c !important;
 }
-
-/* Eingabefelder und Auswahlmenüs */
 [data-baseweb="select"] > div,
 [data-baseweb="input"] > div,
 [data-baseweb="textarea"] > div {
@@ -188,50 +149,37 @@ div.stButton > button:hover {
     color: #f4f7fb !important;
     border-color: #36516c !important;
 }
-
 [data-baseweb="select"] *,
 [data-baseweb="input"] input,
 [data-baseweb="textarea"] textarea {
     color: #f4f7fb !important;
 }
-
 [data-baseweb="popover"],
 [data-baseweb="menu"] {
     background-color: #122238 !important;
 }
-
-/* Allgemeine Schriftfarben */
 h1, h2, h3, h4, h5, p, label {
     color: #f4f7fb;
 }
-
 .stMarkdown,
 .stCaption,
 [data-testid="stCaptionContainer"] {
     color: #c2d0df;
 }
-
-/* Trennlinien */
 hr {
     border-color: #273d53 !important;
 }
-
-/* Tabellen */
 [data-testid="stDataFrame"],
 [data-testid="stTable"] {
     border: 1px solid #293f58;
     border-radius: 12px;
 }
-
-/* Meldungen */
 [data-testid="stAlert"] {
     background: #14263a !important;
     border: 1px solid #293f58 !important;
     border-radius: 12px;
     color: #f4f7fb !important;
 }
-
-/* Download-Button */
 [data-testid="stDownloadButton"] button {
     background: #4be0a0 !important;
     color: #07131c !important;
@@ -239,22 +187,12 @@ hr {
     border-radius: 10px !important;
     font-weight: 800 !important;
 }
-
-/* Radio-Navigation */
 [data-testid="stSidebar"] [role="radiogroup"] label {
     color: #d6e2ef !important;
 }
-
-/* Mobile und kleinere Fenster */
 @media (max-width: 768px) {
-    .hero {
-        padding: 20px;
-    }
-
-    .hero h1 {
-        font-size: 32px;
-    }
-
+    .hero { padding: 20px; }
+    .hero h1 { font-size: 32px; }
     [data-testid="stMainBlockContainer"] {
         padding-top: 0.5rem !important;
     }
@@ -263,7 +201,7 @@ hr {
 """, unsafe_allow_html=True)
 
 
-# ---------- DUNKLE DIAGRAMME ----------
+# ---------- DIAGRAMME ----------
 def dark_bar_chart(
     data,
     title=None,
@@ -286,26 +224,25 @@ def dark_bar_chart(
         column for column in chart_df.columns
         if column != "Kategorie"
     ]
-
     fig = go.Figure()
-
     colors = [GREEN, "#2e9b72", GREEN_LIGHT, "#26785d"]
 
     for i, column in enumerate(value_columns):
-        fig.add_trace(
-            go.Bar(
-                x=chart_df["Kategorie"] if horizontal else chart_df[column],
-                y=chart_df[column] if horizontal else chart_df["Kategorie"],
-                orientation="h" if horizontal else "v",
-                name=str(column),
-                marker_color=colors[i % len(colors)] if len(value_columns) > 1 else color,
-                marker_line_width=0,
-                text=chart_df[column],
-                texttemplate="%{text:.2f}",
-                textposition="outside",
-                cliponaxis=False,
-            )
-        )
+        fig.add_trace(go.Bar(
+            x=chart_df["Kategorie"] if horizontal else chart_df[column],
+            y=chart_df[column] if horizontal else chart_df["Kategorie"],
+            orientation="h" if horizontal else "v",
+            name=str(column),
+            marker_color=(
+                colors[i % len(colors)]
+                if len(value_columns) > 1 else color
+            ),
+            marker_line_width=0,
+            text=chart_df[column],
+            texttemplate="%{text:.2f}",
+            textposition="outside",
+            cliponaxis=False,
+        ))
 
     fig.update_layout(
         title=dict(
@@ -321,34 +258,24 @@ def dark_bar_chart(
         height=390,
         legend=dict(font=dict(color=TEXT), bgcolor="rgba(0,0,0,0)"),
         xaxis=dict(
-            title=x_title,
-            color=MUTED,
-            gridcolor=GRID,
-            linecolor=GRID,
-            tickfont=dict(color=MUTED),
+            title=x_title, color=MUTED, gridcolor=GRID,
+            linecolor=GRID, tickfont=dict(color=MUTED),
             zerolinecolor=GRID,
         ),
         yaxis=dict(
-            title=y_title,
-            color=MUTED,
-            gridcolor=GRID,
-            linecolor=GRID,
-            tickfont=dict(color=MUTED),
+            title=y_title, color=MUTED, gridcolor=GRID,
+            linecolor=GRID, tickfont=dict(color=MUTED),
             zerolinecolor=GRID,
         ),
         hoverlabel=dict(
-            bgcolor="#07111e",
-            font_color=TEXT,
-            bordercolor=GREEN,
+            bgcolor="#07111e", font_color=TEXT, bordercolor=GREEN
         ),
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
 
 def dark_outcome_chart(labels, values, title):
     fig = go.Figure()
-
     colors = [GREEN, "#6bbf9a", "#328c6a"]
 
     formatted_values = [
@@ -357,17 +284,18 @@ def dark_outcome_chart(labels, values, title):
         for value in values
     ]
 
-    fig.add_trace(
-        go.Bar(
-            x=labels,
-            y=values,
-            marker=dict(color=colors[:len(labels)], line=dict(width=0)),
-            text=formatted_values,
-            textposition="outside",
-            cliponaxis=False,
-            hovertemplate="%{x}: %{y:.1f}<extra></extra>",
-        )
-    )
+    fig.add_trace(go.Bar(
+        x=labels,
+        y=values,
+        marker=dict(
+            color=colors[:len(labels)],
+            line=dict(width=0),
+        ),
+        text=formatted_values,
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="%{x}: %{y:.1f}<extra></extra>",
+    ))
 
     fig.update_layout(
         title=dict(text=title, font=dict(color=TEXT, size=18), x=0.02),
@@ -378,173 +306,119 @@ def dark_outcome_chart(labels, values, title):
         height=360,
         showlegend=False,
         xaxis=dict(
-            color=MUTED,
-            gridcolor=GRID,
-            linecolor=GRID,
+            color=MUTED, gridcolor=GRID, linecolor=GRID,
             tickfont=dict(color=MUTED),
         ),
         yaxis=dict(
-            color=MUTED,
-            gridcolor=GRID,
-            linecolor=GRID,
+            color=MUTED, gridcolor=GRID, linecolor=GRID,
             rangemode="tozero",
         ),
         hoverlabel=dict(bgcolor="#07111e", font_color=TEXT),
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
 
-# ---------- API ----------
-def get_api_key():
-    try:
-        return st.secrets["API_FOOTBALL_KEY"]
-    except Exception:
-        return ""
+# ---------- SPORTSCORE API ----------
+@st.cache_data(ttl=300, show_spinner=False)
+def load_sportscore_matches():
+    response = requests.get(
+        SPORTSCORE_URL,
+        params={"sport": "football", "limit": 50},
+        timeout=25,
+    )
+    response.raise_for_status()
+    data = response.json()
 
+    if not isinstance(data, dict):
+        raise RuntimeError("Ungültige Antwort von SportScore.")
 
-def api_get(endpoint, api_key, params=None, retries=3):
-    headers = {"x-apisports-key": api_key}
-    last_error = "Unbekannter Fehler"
+    matches = data.get("matches", [])
+    if not isinstance(matches, list):
+        raise RuntimeError("SportScore hat keine gültige Spieleliste geliefert.")
 
-    for attempt in range(retries + 1):
+    rows = []
+
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+
+        home = match.get("home")
+        away = match.get("away")
+        status = str(match.get("status", "")).lower()
+        match_time = match.get("time")
+
+        if not home or not away or not match_time:
+            continue
+
+        if status not in ("finished", "ft", "aet", "pen"):
+            continue
+
+        hg = match.get("home_score")
+        ag = match.get("away_score")
+
+        if hg is None or ag is None:
+            continue
+
+        date = pd.to_datetime(match_time, utc=True, errors="coerce")
+        if pd.isna(date):
+            continue
+
         try:
-            response = requests.get(
-                f"{API_URL}/{endpoint}",
-                headers=headers,
-                params=params or {},
-                timeout=35,
-            )
+            hg = int(hg)
+            ag = int(ag)
+        except (ValueError, TypeError):
+            continue
 
-            if response.status_code == 429:
-                last_error = "API-Limit erreicht (HTTP 429)."
-                if attempt < retries:
-                    retry_after = response.headers.get("Retry-After")
-                    try:
-                        wait = int(retry_after)
-                    except (ValueError, TypeError):
-                        wait = min(15 * (2 ** attempt), 60)
-                    time.sleep(max(5, min(wait, 90)))
-                    continue
-                raise RuntimeError(
-                    last_error + " Bitte später erneut versuchen."
-                )
+        rows.append({
+            "Datum": date,
+            "Heim": str(home),
+            "Auswärts": str(away),
+            "Tore_Heim": hg,
+            "Tore_Auswärts": ag,
+            "Saison": int(date.year),
+            "Liga": str(match.get("competition") or "Unbekannt"),
+        })
 
-            if response.status_code >= 500 and attempt < retries:
-                time.sleep(4 * (attempt + 1))
-                continue
+    columns = [
+        "Datum", "Heim", "Auswärts", "Tore_Heim",
+        "Tore_Auswärts", "Saison", "Liga",
+    ]
+    df = pd.DataFrame(rows, columns=columns)
 
-            try:
-                data = response.json()
-            except ValueError:
-                data = {}
+    if not df.empty:
+        df = df.drop_duplicates(
+            subset=["Datum", "Heim", "Auswärts"]
+        )
+        df = df.sort_values("Datum").reset_index(drop=True)
 
-            if response.status_code != 200:
-                raise RuntimeError(
-                    f"HTTP {response.status_code}: "
-                    f"{data.get('errors', response.text[:200])}"
-                )
-
-            if isinstance(data, dict) and data.get("errors"):
-                raise RuntimeError(str(data["errors"]))
-
-            return data
-
-        except requests.RequestException as exc:
-            last_error = str(exc)
-            if attempt < retries:
-                time.sleep(3 * (attempt + 1))
-                continue
-            raise RuntimeError(f"Verbindungsfehler: {last_error}")
-
-    raise RuntimeError(last_error)
+    return df
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def load_available_seasons(league_id, api_key):
-    data = api_get("leagues", api_key, {"id": int(league_id)})
-    current_year = datetime.now(timezone.utc).year
-    years = set()
-
-    for entry in data.get("response", []):
-        for season in entry.get("seasons", []):
-            year = season.get("year")
-            if year is not None:
-                year = int(year)
-                if START_YEAR <= year <= current_year:
-                    years.add(year)
-
-    if not years:
-        raise RuntimeError("Keine verfügbaren Saisons ab 2022 gefunden.")
-
-    return sorted(years)
-
-
-@st.cache_data(ttl=86400, show_spinner=False)
-def load_matches(league_id, api_key):
-    all_matches = []
+def load_matches(league_name=None):
+    df = load_sportscore_matches()
     errors = []
-    seasons = load_available_seasons(league_id, api_key)
-    yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
-
-    for index, season in enumerate(seasons):
-        try:
-            data = api_get(
-                "fixtures",
-                api_key,
-                {"league": int(league_id), "season": int(season)},
-            )
-
-            for item in data.get("response", []):
-                fixture = item.get("fixture", {})
-                teams = item.get("teams", {})
-                goals = item.get("goals", {})
-                status = fixture.get("status", {}).get("short")
-
-                home = teams.get("home", {}).get("name")
-                away = teams.get("away", {}).get("name")
-                hg = goals.get("home")
-                ag = goals.get("away")
-
-                if not home or not away or not fixture.get("date"):
-                    continue
-
-                date = pd.to_datetime(
-                    fixture["date"], utc=True, errors="coerce"
-                )
-
-                if pd.isna(date) or date.date() > yesterday:
-                    continue
-
-                if status not in ("FT", "AET", "PEN"):
-                    continue
-
-                if hg is None or ag is None:
-                    continue
-
-                all_matches.append({
-                    "Datum": date,
-                    "Heim": home,
-                    "Auswärts": away,
-                    "Tore_Heim": int(hg),
-                    "Tore_Auswärts": int(ag),
-                    "Saison": season,
-                })
-
-        except Exception as exc:
-            errors.append(f"Saison {season}: {exc}")
-
-        if index < len(seasons) - 1:
-            time.sleep(4)
-
-    df = pd.DataFrame(all_matches)
 
     if df.empty:
-        return df, errors, seasons
+        return df, errors, []
 
-    df = df.drop_duplicates(subset=["Datum", "Heim", "Auswärts"])
-    df = df.sort_values("Datum").reset_index(drop=True)
+    # Liga-Namen der API sind nicht immer einheitlich.
+    # Deshalb wird nur gefiltert, wenn die Bezeichnung passt.
+    expected = LEAGUES.get(league_name, "")
+    if expected:
+        league_values = df["Liga"].fillna("").astype(str)
+        matching = df[
+            league_values.str.contains(
+                expected, case=False, regex=False
+            )
+        ].copy()
 
+        # Keine falschen Resultate vortäuschen, wenn die Liga
+        # in der aktuellen API-Antwort nicht vorkommt.
+        df = matching
+
+    seasons = sorted(
+        int(year) for year in df["Saison"].dropna().unique()
+    )
     return df, errors, seasons
 
 
@@ -713,14 +587,6 @@ st.sidebar.markdown("**Erstellt von**")
 st.sidebar.write("Tiago Faruk und Yigit")
 st.sidebar.caption("Prognosen sind Schätzungen, keine Garantien.")
 
-api_key = get_api_key()
-
-if not api_key:
-    st.error("API-Schlüssel fehlt. Bitte in Streamlit → Settings → Secrets eintragen.")
-    st.code('API_FOOTBALL_KEY = "DEIN_API_SCHLUESSEL"')
-    st.stop()
-
-
 # ---------- HOME ----------
 if page == "🏠 Home":
     st.markdown("""
@@ -733,11 +599,11 @@ if page == "🏠 Home":
 
     a, b, c = st.columns(3)
     with a:
-        metric("Daten ab", "2022", "Soweit über die API verfügbar")
+        metric("Datenquelle", "SportScore", "Öffentliche Fussballdaten")
     with b:
         metric("Prognose", "1X2", "Heimsieg · Remis · Auswärtssieg")
     with c:
-        metric("Wettbewerbe", str(len(LEAGUES)), "Internationale Ligen")
+        metric("Wettbewerbe", str(len(LEAGUES)), "Verfügbare Auswahl")
 
     st.markdown("### Entdecke die Plattform")
     a, b = st.columns(2)
@@ -764,13 +630,13 @@ if page == "🏠 Home":
         </div>
         <div class="panel">
             <h3>📅 Ergebnisse</h3>
-            Durchsuche die zuletzt geladenen abgeschlossenen Spiele.
+            Durchsuche die geladenen abgeschlossenen Spiele.
         </div>
         """, unsafe_allow_html=True)
 
     st.info(
-        "Die Berechnungen basieren auf historischen Resultaten. "
-        "Eine bestimmte Trefferquote wird nicht garantiert."
+        "Die Berechnungen basieren auf den Resultaten, die SportScore "
+        "zur Verfügung stellt. Eine bestimmte Trefferquote wird nicht garantiert."
     )
 
 else:
@@ -778,7 +644,7 @@ else:
     <div class="hero">
         <div class="eyebrow">KickPredict AI · Analytics</div>
         <h1>{page}</h1>
-        <p>Fussballstatistiken und historische Resultate auf einen Blick.</p>
+        <p>Fussballstatistiken und Resultate auf einen Blick.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -787,34 +653,41 @@ else:
         list(LEAGUES.keys()),
         key="league_choice",
     )
-    league_id = LEAGUES[league_name]
 
     left, right = st.columns([3, 1])
     with left:
-        st.caption("Daten werden zwischengespeichert, um API-Anfragen zu reduzieren.")
+        st.caption(
+            "Daten werden fünf Minuten zwischengespeichert, "
+            "um API-Anfragen zu reduzieren."
+        )
     with right:
         refresh = st.button("🔄 Aktualisieren", use_container_width=True)
 
     if refresh:
-        load_matches.clear()
-        load_available_seasons.clear()
+        load_sportscore_matches.clear()
         st.rerun()
 
     try:
-        with st.spinner("Lade verfügbare Resultate …"):
-            df, errors, seasons = load_matches(league_id, api_key)
+        with st.spinner("Lade Resultate von SportScore …"):
+            df, errors, seasons = load_matches(league_name)
     except Exception as exc:
         st.error(f"Daten konnten nicht geladen werden: {exc}")
-        st.info("Warte bei API-Limits einige Minuten und versuche es erneut.")
+        st.info(
+            "Prüfe deine Internetverbindung oder versuche es später erneut."
+        )
         st.stop()
 
-    if errors:
-        with st.expander("API-Meldungen anzeigen"):
-            for error in errors:
-                st.warning(error)
-
     if df.empty:
-        st.error("Keine abgeschlossenen Spiele verfügbar.")
+        st.warning(
+            f"SportScore hat in der aktuellen Antwort keine abgeschlossenen "
+            f"Spiele für **{league_name}** geliefert. Wähle einen anderen "
+            "Wettbewerb oder versuche es später erneut."
+        )
+        st.markdown(
+            '<a href="https://sportscore.com/" rel="dofollow">'
+            'Powered by SportScore</a>',
+            unsafe_allow_html=True,
+        )
         st.stop()
 
     teams = sorted(set(df["Heim"]) | set(df["Auswärts"]))
@@ -825,7 +698,7 @@ else:
         with a:
             metric("Geladene Spiele", f"{len(df):,}".replace(",", "."))
         with b:
-            metric("Saisons", str(len(seasons)), f"{seasons[0]}–{seasons[-1]}")
+            metric("Saisons/Jahre", str(len(seasons)))
         with c:
             metric("Letztes Spiel", df["Datum"].max().strftime("%d.%m.%Y"))
 
@@ -835,7 +708,9 @@ else:
 
         away_options = [team for team in teams if team != home_team]
         with col2:
-            away_team = st.selectbox("Auswärtsteam", away_options, key="predict_away")
+            away_team = st.selectbox(
+                "Auswärtsteam", away_options, key="predict_away"
+            )
 
         if st.button("🚀 Prognose berechnen", use_container_width=True):
             result = predict_match(df, home_team, away_team)
@@ -898,7 +773,11 @@ else:
             with b:
                 metric("Ø Tore", f"{overall['tore']:.2f}", "pro Spiel")
             with c:
-                metric("Ø Gegentore", f"{overall['gegentreffer']:.2f}", "pro Spiel")
+                metric(
+                    "Ø Gegentore",
+                    f"{overall['gegentreffer']:.2f}",
+                    "pro Spiel",
+                )
             with d:
                 metric("Punkte", str(overall["punkte"]), "Letzte 12 Spiele")
 
@@ -920,7 +799,6 @@ else:
                     away_stats["spiele"] if away_stats else 0,
                 ],
             })
-
             dark_bar_chart(
                 comparison,
                 title="Heim- und Auswärtsvergleich",
@@ -1010,7 +888,7 @@ else:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("### Spiele nach Saison")
+        st.markdown("### Spiele nach Jahr")
         season_summary = df.groupby("Saison").agg(
             Spiele=("Heim", "count"),
             Tore_Heim=("Tore_Heim", "sum"),
@@ -1032,9 +910,10 @@ else:
         )
 
         season_filter = st.selectbox(
-            "Saison filtern",
-            ["Alle Saisons"] + [
-                str(year) for year in sorted(df["Saison"].unique(), reverse=True)
+            "Jahr filtern",
+            ["Alle Jahre"] + [
+                str(year)
+                for year in sorted(df["Saison"].unique(), reverse=True)
             ],
             key="results_season",
         )
@@ -1047,7 +926,7 @@ else:
                 | (results["Auswärts"] == team_filter)
             ]
 
-        if season_filter != "Alle Saisons":
+        if season_filter != "Alle Jahre":
             results = results[results["Saison"] == int(season_filter)]
 
         results["Datum"] = (
@@ -1081,8 +960,8 @@ else:
     elif page == "ℹ️ Über uns":
         st.markdown("### Unsere Idee")
         st.write(
-            "KickPredict AI ist ein Fussballanalyse-Projekt, das historische "
-            "Ergebnisse nutzt, um statistische Schätzungen für mögliche "
+            "KickPredict AI ist ein Fussballanalyse-Projekt, das verfügbare "
+            "Resultate nutzt, um statistische Schätzungen für mögliche "
             "Spielausgänge zu berechnen."
         )
 
@@ -1099,10 +978,16 @@ else:
         st.markdown("## Tiago Faruk und Yigit")
 
         st.info(
-            "Die Daten stammen von API-Football. Welche Saisons verfügbar "
-            "sind, hängt vom API-Zugang ab. Die Prognosen garantieren "
+            "Die Datenquelle ist SportScore. Die verfügbaren Spiele hängen "
+            "von der aktuellen API-Antwort ab. Die Prognosen garantieren "
             "keine bestimmte Trefferquote."
         )
 
+# ---------- SPORTSCORE HINWEIS ----------
 st.sidebar.divider()
 st.sidebar.caption("KickPredict AI · Football analytics")
+st.markdown(
+    '<a href="https://sportscore.com/" rel="dofollow">'
+    'Powered by SportScore</a>',
+    unsafe_allow_html=True,
+)
