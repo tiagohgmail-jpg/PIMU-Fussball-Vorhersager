@@ -26,7 +26,7 @@ LEAGUES = {
 GREEN = "#4be0a0"
 GREEN_LIGHT = "#85f3be"
 DARK = "#122238"
-DARKER = "#0b192a"
+DARKER = "#07111e"
 TEXT = "#f4f7fb"
 MUTED = "#aebfd2"
 GRID = "#293f58"
@@ -38,21 +38,70 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---------- DESIGN ----------
+# ---------- DESIGN: DUNKLER HINTERGRUND OHNE WEISSEN KOPFBEREICH ----------
 st.markdown("""
 <style>
-.stApp {
-    background: linear-gradient(135deg, #07111f 0%, #0b192a 55%, #102a36 100%);
-    color: #f4f7fb;
+/* Gesamte Website */
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"] {
+    background: linear-gradient(
+        135deg,
+        #07111f 0%,
+        #0b192a 55%,
+        #102a36 100%
+    ) !important;
+    color: #f4f7fb !important;
 }
+
+/* Streamlit-Kopfbereich */
+[data-testid="stHeader"],
+[data-testid="stHeader"] > div,
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    background-color: #07111f !important;
+    color: #f4f7fb !important;
+}
+
+/* Toolbar und Aktionen oben */
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+[data-testid="stDeployButton"] {
+    background: transparent !important;
+}
+
+/* Falls Streamlit oben einen zusätzlichen weissen Streifen zeichnet */
+.stApp > header,
+.stApp header,
+[data-testid="stAppViewContainer"] > header {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* Oberen Abstand verkleinern */
+[data-testid="stMainBlockContainer"] {
+    padding-top: 1rem !important;
+}
+
+/* Sidebar */
 [data-testid="stSidebar"] {
-    background: #07111e;
+    background: #07111e !important;
     border-right: 1px solid #21364b;
 }
+
+[data-testid="stSidebar"] > div {
+    background: #07111e !important;
+}
+
 [data-testid="stSidebar"] p,
-[data-testid="stSidebar"] label {
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] span {
     color: #c2d0df;
 }
+
+/* Hero-Bereich */
 .hero {
     padding: 30px;
     border-radius: 20px;
@@ -60,23 +109,28 @@ st.markdown("""
     border: 1px solid #315b68;
     margin-bottom: 22px;
 }
+
 .hero h1 {
     font-size: 42px;
     font-weight: 850;
     margin-bottom: 8px;
-    color: #f4f7fb;
+    color: #f4f7fb !important;
 }
+
 .hero p {
-    color: #d2e2ee;
+    color: #d2e2ee !important;
     font-size: 17px;
 }
+
 .eyebrow {
-    color: #63edaf;
+    color: #63edaf !important;
     text-transform: uppercase;
     font-weight: 800;
     letter-spacing: 2px;
     font-size: 12px;
 }
+
+/* Inhaltskarten */
 .panel {
     background: #122238;
     border: 1px solid #293f58;
@@ -84,6 +138,8 @@ st.markdown("""
     padding: 18px;
     margin-bottom: 12px;
 }
+
+/* Kennzahlen */
 .metric {
     background: linear-gradient(145deg, #152940, #101e31);
     border: 1px solid #2b435e;
@@ -91,101 +147,165 @@ st.markdown("""
     padding: 18px;
     min-height: 115px;
 }
+
 .metric-label {
-    color: #aebfd2;
+    color: #aebfd2 !important;
     font-size: 13px;
 }
+
 .metric-value {
-    color: #5ce6a6;
+    color: #5ce6a6 !important;
     font-size: 28px;
     font-weight: 850;
     margin-top: 5px;
 }
+
 .muted {
-    color: #aebfd2;
+    color: #aebfd2 !important;
     font-size: 13px;
 }
+
+/* Buttons */
 div.stButton > button {
-    background: #4be0a0;
-    color: #07131c;
-    border: 0;
-    border-radius: 10px;
-    font-weight: 800;
+    background: #4be0a0 !important;
+    color: #07131c !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    font-weight: 800 !important;
     min-height: 43px;
 }
+
 div.stButton > button:hover {
-    background: #85f3be;
-    color: #07131c;
+    background: #85f3be !important;
+    color: #07131c !important;
 }
-hr {
-    border-color: #273d53;
+
+/* Eingabefelder und Auswahlmenüs */
+[data-baseweb="select"] > div,
+[data-baseweb="input"] > div,
+[data-baseweb="textarea"] > div {
+    background-color: #122238 !important;
+    color: #f4f7fb !important;
+    border-color: #36516c !important;
 }
-h1, h2, h3, h4, p, label {
+
+[data-baseweb="select"] *,
+[data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea {
+    color: #f4f7fb !important;
+}
+
+[data-baseweb="popover"],
+[data-baseweb="menu"] {
+    background-color: #122238 !important;
+}
+
+/* Allgemeine Schriftfarben */
+h1, h2, h3, h4, h5, p, label {
     color: #f4f7fb;
 }
+
+.stMarkdown,
+.stCaption,
+[data-testid="stCaptionContainer"] {
+    color: #c2d0df;
+}
+
+/* Trennlinien */
+hr {
+    border-color: #273d53 !important;
+}
+
+/* Tabellen */
 [data-testid="stDataFrame"],
 [data-testid="stTable"] {
     border: 1px solid #293f58;
     border-radius: 12px;
 }
+
+/* Meldungen */
 [data-testid="stAlert"] {
-    background: #14263a;
-    border: 1px solid #293f58;
+    background: #14263a !important;
+    border: 1px solid #293f58 !important;
     border-radius: 12px;
+    color: #f4f7fb !important;
+}
+
+/* Download-Button */
+[data-testid="stDownloadButton"] button {
+    background: #4be0a0 !important;
+    color: #07131c !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    font-weight: 800 !important;
+}
+
+/* Radio-Navigation */
+[data-testid="stSidebar"] [role="radiogroup"] label {
+    color: #d6e2ef !important;
+}
+
+/* Mobile und kleinere Fenster */
+@media (max-width: 768px) {
+    .hero {
+        padding: 20px;
+    }
+
+    .hero h1 {
+        font-size: 32px;
+    }
+
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 0.5rem !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ---------- DUNKLE DIAGRAMME ----------
-def dark_bar_chart(data, title=None, x_title=None, y_title=None,
-                   horizontal=False, color=GREEN):
-    """Erstellt ein Diagramm im dunklen KickPredict-Design."""
+def dark_bar_chart(
+    data,
+    title=None,
+    x_title=None,
+    y_title=None,
+    horizontal=False,
+    color=GREEN,
+):
     if isinstance(data, pd.Series):
         chart_df = data.rename("Wert").reset_index()
         chart_df.columns = ["Kategorie", "Wert"]
     else:
-        chart_df = data.reset_index()
-        first_column = chart_df.columns[0]
-        chart_df = chart_df.rename(columns={first_column: "Kategorie"})
+        chart_df = data.copy().reset_index(drop=True)
+        if "Kategorie" not in chart_df.columns:
+            chart_df = chart_df.rename(
+                columns={chart_df.columns[0]: "Kategorie"}
+            )
 
-    if horizontal:
-        fig = px.bar(
-            chart_df,
-            x=chart_df.columns[-1],
-            y="Kategorie",
-            orientation="h",
-            title=title,
-            color_discrete_sequence=[color],
-            text=chart_df.columns[-1],
-        )
-        fig.update_traces(
-            texttemplate="%{text:.2f}",
-            textposition="outside",
-            cliponaxis=False,
-            marker_line_width=0,
-        )
-    else:
-        value_columns = [
-            col for col in chart_df.columns if col != "Kategorie"
-        ]
-        fig = go.Figure()
+    value_columns = [
+        column for column in chart_df.columns
+        if column != "Kategorie"
+    ]
 
-        for i, column in enumerate(value_columns):
-            series_color = GREEN if i == 0 else "#52a8ff"
-            fig.add_trace(go.Bar(
-                x=chart_df["Kategorie"],
-                y=chart_df[column],
+    fig = go.Figure()
+
+    colors = [GREEN, "#2e9b72", GREEN_LIGHT, "#26785d"]
+
+    for i, column in enumerate(value_columns):
+        fig.add_trace(
+            go.Bar(
+                x=chart_df["Kategorie"] if horizontal else chart_df[column],
+                y=chart_df[column] if horizontal else chart_df["Kategorie"],
+                orientation="h" if horizontal else "v",
                 name=str(column),
-                marker_color=series_color,
+                marker_color=colors[i % len(colors)] if len(value_columns) > 1 else color,
                 marker_line_width=0,
                 text=chart_df[column],
                 texttemplate="%{text:.2f}",
                 textposition="outside",
                 cliponaxis=False,
-            ))
-
-        fig.update_layout(barmode="group")
+            )
+        )
 
     fig.update_layout(
         title=dict(
@@ -193,19 +313,13 @@ def dark_bar_chart(data, title=None, x_title=None, y_title=None,
             font=dict(color=TEXT, size=18),
             x=0.02,
         ),
+        barmode="group",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor=DARK,
-        font=dict(
-            family="Arial, sans-serif",
-            color=TEXT,
-            size=12,
-        ),
-        margin=dict(l=18, r=28, t=55 if title else 25, b=45),
+        font=dict(family="Arial, sans-serif", color=TEXT, size=12),
+        margin=dict(l=18, r=40, t=55 if title else 25, b=45),
         height=390,
-        legend=dict(
-            font=dict(color=TEXT),
-            bgcolor="rgba(0,0,0,0)",
-        ),
+        legend=dict(font=dict(color=TEXT), bgcolor="rgba(0,0,0,0)"),
         xaxis=dict(
             title=x_title,
             color=MUTED,
@@ -233,23 +347,27 @@ def dark_bar_chart(data, title=None, x_title=None, y_title=None,
 
 
 def dark_outcome_chart(labels, values, title):
-    """Einheitliche grüne Ergebnisbalken mit Prozent- oder Zahlenwerten."""
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=labels,
-        y=values,
-        marker=dict(
-            color=[GREEN, "#6bbf9a", "#328c6a"][:len(labels)],
-            line=dict(width=0),
-        ),
-        text=[
-            f"{v:.1f}%" if title == "Spielprognose" else f"{v:,.0f}".replace(",", ".")
-            for v in values
-        ],
-        textposition="outside",
-        cliponaxis=False,
-        hovertemplate="%{x}: %{y:.1f}<extra></extra>",
-    ))
+
+    colors = [GREEN, "#6bbf9a", "#328c6a"]
+
+    formatted_values = [
+        f"{value:.1f}%" if title == "Spielprognose"
+        else f"{value:,.0f}".replace(",", ".")
+        for value in values
+    ]
+
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=values,
+            marker=dict(color=colors[:len(labels)], line=dict(width=0)),
+            text=formatted_values,
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{x}: %{y:.1f}<extra></extra>",
+        )
+    )
 
     fig.update_layout(
         title=dict(text=title, font=dict(color=TEXT, size=18), x=0.02),
@@ -374,10 +492,7 @@ def load_matches(league_id, api_key):
             data = api_get(
                 "fixtures",
                 api_key,
-                {
-                    "league": int(league_id),
-                    "season": int(season),
-                },
+                {"league": int(league_id), "season": int(season)},
             )
 
             for item in data.get("response", []):
@@ -427,9 +542,7 @@ def load_matches(league_id, api_key):
     if df.empty:
         return df, errors, seasons
 
-    df = df.drop_duplicates(
-        subset=["Datum", "Heim", "Auswärts"]
-    )
+    df = df.drop_duplicates(subset=["Datum", "Heim", "Auswärts"])
     df = df.sort_values("Datum").reset_index(drop=True)
 
     return df, errors, seasons
@@ -566,6 +679,7 @@ def metric(label, value, subtitle=""):
 def form_string(stats):
     if not stats:
         return "Keine Daten"
+
     output = []
     for _, row in stats["form"].iterrows():
         if row["Eigen"] > row["Gegner"]:
@@ -574,6 +688,7 @@ def form_string(stats):
             output.append("U")
         else:
             output.append("N")
+
     return " – ".join(output)
 
 
@@ -718,7 +833,7 @@ else:
         with col1:
             home_team = st.selectbox("Heimteam", teams, key="predict_home")
 
-        away_options = [t for t in teams if t != home_team]
+        away_options = [team for team in teams if team != home_team]
         with col2:
             away_team = st.selectbox("Auswärtsteam", away_options, key="predict_away")
 
@@ -919,7 +1034,7 @@ else:
         season_filter = st.selectbox(
             "Saison filtern",
             ["Alle Saisons"] + [
-                str(y) for y in sorted(df["Saison"].unique(), reverse=True)
+                str(year) for year in sorted(df["Saison"].unique(), reverse=True)
             ],
             key="results_season",
         )
@@ -952,16 +1067,12 @@ else:
         ].sort_values("Datum", ascending=False)
 
         st.caption(f"{len(display)} Spiele gefunden")
-        st.dataframe(
-            display,
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.dataframe(display, use_container_width=True, hide_index=True)
 
-        csv = display.to_csv(index=False).encode("utf-8-sig")
+        csv_data = display.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
             "⬇️ Ergebnisse als CSV exportieren",
-            data=csv,
+            data=csv_data,
             file_name="kickpredict_ergebnisse.csv",
             mime="text/csv",
         )
