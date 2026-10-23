@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pandas as pd
 import requests
@@ -7,10 +7,11 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Öffentliche Fussballdaten von GitHub – kein API-Key notwendig
-GITHUB_RAW = "https://raw.githubusercontent.com/openfootball/football.json/master"
-DAYS_BACK = 30
-SEASONS = ["2022-23", "2023-24", "2024-25", "2025-26", "2026-27"]
+# ============================================================
+# KICKPREDICT AI – öffentliche Fussballdaten, kein API-Schlüssel
+# ============================================================
+
+BASE_URL = "https://raw.githubusercontent.com/openfootball/football.json/master"
 
 LEAGUES = {
     "Premier League 🇬🇧": "en.1.json",
@@ -23,47 +24,120 @@ LEAGUES = {
     "Super League 🇨🇭": None,
 }
 
-GREEN = "#4be0a0"
-DARK = "#122238"
-TEXT = "#f4f7fb"
-MUTED = "#aebfd2"
-GRID = "#293f58"
+SEASONS = [
+    "2026-27",
+    "2025-26",
+    "2024-25",
+    "2023-24",
+    "2022-23",
+    "2021-22",
+    "2020-21",
+]
 
 st.set_page_config(
     page_title="KickPredict AI",
     page_icon="⚽",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
 <style>
-.stApp,[data-testid="stAppViewContainer"],[data-testid="stMain"] {
-    background:linear-gradient(135deg,#07111f,#0b192a 55%,#102a36)!important;
-    color:#f4f7fb!important;
+.stApp {
+    background: linear-gradient(135deg,#07111f,#0b192a 55%,#102a36);
+    color:#f4f7fb;
 }
-[data-testid="stHeader"] {background:transparent!important;}
-[data-testid="stSidebar"],[data-testid="stSidebar"]>div {background:#07111e!important;}
-[data-testid="stSidebar"] p,[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] span {color:#c2d0df;}
-[data-testid="stMainBlockContainer"] {padding-top:1rem!important;}
-.hero {padding:30px;border-radius:20px;background:linear-gradient(115deg,#142943,#12513f);border:1px solid #315b68;margin-bottom:22px;}
-.hero h1 {font-size:42px;font-weight:850;color:#f4f7fb!important;}
-.hero p {color:#d2e2ee!important;font-size:17px;}
-.eyebrow {color:#63edaf!important;text-transform:uppercase;font-weight:800;letter-spacing:2px;font-size:12px;}
-.panel {background:#122238;border:1px solid #293f58;border-radius:15px;padding:18px;margin-bottom:12px;}
-.metric {background:linear-gradient(145deg,#152940,#101e31);border:1px solid #2b435e;border-radius:15px;padding:18px;min-height:115px;}
-.metric-label {color:#aebfd2!important;font-size:13px;}
-.metric-value {color:#5ce6a6!important;font-size:28px;font-weight:850;margin-top:5px;}
-.muted {color:#aebfd2!important;font-size:13px;}
-div.stButton>button,[data-testid="stDownloadButton"] button {background:#4be0a0!important;color:#07131c!important;border:0!important;border-radius:10px!important;font-weight:800!important;min-height:43px;}
-[data-baseweb="select"]>div,[data-baseweb="input"]>div {background:#122238!important;color:#f4f7fb!important;border-color:#36516c!important;}
-[data-baseweb="select"] *,[data-baseweb="input"] input {color:#f4f7fb!important;}
-h1,h2,h3,h4,p,label {color:#f4f7fb;}
-hr {border-color:#273d53!important;}
-@media(max-width:768px) {.hero {padding:20px;}.hero h1 {font-size:32px;}}
+[data-testid="stSidebar"] {
+    background:#07111e;
+}
+[data-testid="stHeader"] {
+    background:transparent;
+}
+.hero {
+    padding:30px;
+    border-radius:20px;
+    background:linear-gradient(115deg,#142943,#12513f);
+    border:1px solid #315b68;
+    margin-bottom:22px;
+}
+.hero h1 {
+    font-size:42px;
+    font-weight:850;
+    color:#f4f7fb;
+}
+.hero p {
+    color:#d2e2ee;
+    font-size:17px;
+}
+.eyebrow {
+    color:#63edaf;
+    text-transform:uppercase;
+    font-weight:800;
+    letter-spacing:2px;
+    font-size:12px;
+}
+.metric {
+    background:linear-gradient(145deg,#152940,#101e31);
+    border:1px solid #2b435e;
+    border-radius:15px;
+    padding:18px;
+    min-height:105px;
+}
+.metric-label {
+    color:#aebfd2;
+    font-size:13px;
+}
+.metric-value {
+    color:#5ce6a6;
+    font-size:27px;
+    font-weight:850;
+    margin-top:5px;
+}
+.panel {
+    background:#122238;
+    border:1px solid #293f58;
+    border-radius:15px;
+    padding:18px;
+    margin-bottom:12px;
+}
+.muted {
+    color:#aebfd2;
+    font-size:13px;
+}
+div.stButton>button,
+[data-testid="stDownloadButton"] button {
+    background:#4be0a0;
+    color:#07131c;
+    border:0;
+    border-radius:10px;
+    font-weight:800;
+    min-height:43px;
+}
+[data-baseweb="select"]>div,
+[data-baseweb="input"]>div {
+    background:#122238;
+    color:#f4f7fb;
+    border-color:#36516c;
+}
+h1,h2,h3,h4,p,label {
+    color:#f4f7fb;
+}
+hr {
+    border-color:#273d53;
+}
 </style>
 """, unsafe_allow_html=True)
+
+
+# -------------------- DESIGN --------------------
+
+def hero(title, subtitle):
+    st.markdown(f"""
+    <div class="hero">
+        <div class="eyebrow">KickPredict AI · Analytics</div>
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def metric(label, value, subtitle=""):
@@ -76,127 +150,89 @@ def metric(label, value, subtitle=""):
     """, unsafe_allow_html=True)
 
 
-def show_attribution():
+def attribution():
     st.markdown(
-        '<a href="https://github.com/openfootball/football.json" '
-        'target="_blank" rel="noopener noreferrer">'
-        'Fussballdaten: OpenFootball auf GitHub</a>',
-        unsafe_allow_html=True,
+        "[Fussballdaten: OpenFootball auf GitHub]"
+        "(https://github.com/openfootball/football.json)"
     )
 
 
-def outcome_chart(labels, values, title):
-    colors = [GREEN, "#6bbf9a", "#328c6a"]
-    fig = go.Figure(go.Bar(
-        x=labels,
-        y=values,
-        marker_color=colors[:len(labels)],
-        text=[
-            f"{v:.1f}%" if title == "Spielprognose" else str(int(v))
-            for v in values
-        ],
-        textposition="outside",
-        cliponaxis=False,
-    ))
-    fig.update_layout(
-        title=title,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=DARK,
-        font=dict(color=TEXT),
-        margin=dict(l=20, r=25, t=55, b=45),
-        height=350,
-        showlegend=False,
-        xaxis=dict(color=MUTED, gridcolor=GRID),
-        yaxis=dict(color=MUTED, gridcolor=GRID, rangemode="tozero"),
-    )
-    st.plotly_chart(fig, use_container_width=True)
+# -------------------- DATEN LADEN --------------------
 
-
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def load_matches(filename):
-    """Lädt abgeschlossene Spiele aus öffentlichen OpenFootball-JSON-Dateien."""
     columns = [
         "Datum", "Heim", "Auswärts",
-        "Tore_Heim", "Tore_Auswärts", "Saison", "Liga"
+        "Tore_Heim", "Tore_Auswärts",
+        "Saison", "Liga"
     ]
 
     if not filename:
-        return pd.DataFrame(columns=columns), [
-            "Für diesen Wettbewerb ist keine passende GitHub-Datei konfiguriert."
-        ]
+        return pd.DataFrame(columns=columns), []
 
     rows = []
     errors = []
-    today = datetime.now(timezone.utc).date()
-    cutoff = today - timedelta(days=DAYS_BACK)
+    session = requests.Session()
+    session.headers.update({"User-Agent": "KickPredictAI/1.0"})
 
-    with requests.Session() as session:
-        session.headers.update({
-            "User-Agent": "KickPredictAI/1.0 (public football data)"
-        })
+    for season in SEASONS:
+        url = f"{BASE_URL}/{season}/{filename}"
 
-        for season in SEASONS:
-            url = f"{GITHUB_RAW}/{season}/{filename}"
+        try:
+            response = session.get(url, timeout=20)
 
-            try:
-                response = session.get(url, timeout=15)
+            if response.status_code == 404:
+                continue
 
-                if response.status_code == 404:
+            response.raise_for_status()
+            payload = response.json()
+
+            for match in payload.get("matches", []):
+                date = pd.to_datetime(
+                    match.get("date"),
+                    errors="coerce",
+                    utc=True
+                )
+
+                if pd.isna(date):
                     continue
 
-                response.raise_for_status()
-                payload = response.json()
+                score = match.get("score") or {}
+                ft = score.get("ft") if isinstance(score, dict) else None
 
-                if not isinstance(payload, dict):
+                # Nur Spiele mit Endresultat verwenden.
+                if not isinstance(ft, (list, tuple)) or len(ft) != 2:
                     continue
 
-                for match in payload.get("matches", []):
-                    if not isinstance(match, dict):
-                        continue
+                if ft[0] is None or ft[1] is None:
+                    continue
 
-                    parsed_date = pd.to_datetime(
-                        match.get("date"), utc=True, errors="coerce"
-                    )
+                home = match.get("team1")
+                away = match.get("team2")
 
-                    if pd.isna(parsed_date):
-                        continue
+                if not home or not away:
+                    continue
 
-                    if not (cutoff <= parsed_date.date() <= today):
-                        continue
+                try:
+                    home_goals = int(ft[0])
+                    away_goals = int(ft[1])
+                except (ValueError, TypeError):
+                    continue
 
-                    score = match.get("score") or {}
-                    full_time = score.get("ft") if isinstance(score, dict) else None
+                rows.append({
+                    "Datum": date,
+                    "Heim": str(home),
+                    "Auswärts": str(away),
+                    "Tore_Heim": home_goals,
+                    "Tore_Auswärts": away_goals,
+                    "Saison": season,
+                    "Liga": filename,
+                })
 
-                    if not isinstance(full_time, (list, tuple)) or len(full_time) != 2:
-                        continue
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            errors.append(f"{season}: {exc}")
 
-                    if full_time[0] is None or full_time[1] is None:
-                        continue
-
-                    try:
-                        home_score = int(full_time[0])
-                        away_score = int(full_time[1])
-                    except (TypeError, ValueError):
-                        continue
-
-                    home = match.get("team1")
-                    away = match.get("team2")
-
-                    if not home or not away:
-                        continue
-
-                    rows.append({
-                        "Datum": parsed_date,
-                        "Heim": str(home),
-                        "Auswärts": str(away),
-                        "Tore_Heim": home_score,
-                        "Tore_Auswärts": away_score,
-                        "Saison": int(season[:4]),
-                        "Liga": filename,
-                    })
-
-            except (requests.RequestException, ValueError) as exc:
-                errors.append(f"{season}: {exc}")
+    session.close()
 
     df = pd.DataFrame(rows, columns=columns)
 
@@ -209,7 +245,9 @@ def load_matches(filename):
     return df, errors
 
 
-def team_stats(df, team, venue=None, last_n=12):
+# -------------------- TEAMSTATISTIKEN --------------------
+
+def team_stats(df, team, venue=None, last_n=20):
     home = df[df["Heim"] == team].copy()
     away = df[df["Auswärts"] == team].copy()
 
@@ -220,35 +258,37 @@ def team_stats(df, team, venue=None, last_n=12):
     away["Gegner"] = away["Tore_Heim"]
 
     if venue == "home":
-        matches = home
+        games = home
     elif venue == "away":
-        matches = away
+        games = away
     else:
-        matches = pd.concat([home, away], ignore_index=True)
+        games = pd.concat([home, away], ignore_index=True)
 
-    matches = matches.sort_values("Datum").tail(last_n)
+    games = games.sort_values("Datum").tail(last_n)
 
-    if matches.empty:
+    if games.empty:
         return None
 
-    wins = int((matches["Eigen"] > matches["Gegner"]).sum())
-    draws = int((matches["Eigen"] == matches["Gegner"]).sum())
-    losses = int((matches["Eigen"] < matches["Gegner"]).sum())
+    wins = int((games["Eigen"] > games["Gegner"]).sum())
+    draws = int((games["Eigen"] == games["Gegner"]).sum())
+    losses = int((games["Eigen"] < games["Gegner"]).sum())
 
     return {
-        "spiele": len(matches),
-        "tore": float(matches["Eigen"].mean()),
-        "gegentreffer": float(matches["Gegner"].mean()),
+        "spiele": len(games),
+        "tore": float(games["Eigen"].mean()),
+        "gegentreffer": float(games["Gegner"].mean()),
         "siege": wins,
         "remis": draws,
         "niederlagen": losses,
         "punkte": wins * 3 + draws,
-        "form": matches,
+        "form": games,
     }
 
 
-def poisson_probability(goals, expected):
-    expected = max(0.05, float(expected))
+# -------------------- PROGNOSEMODELL --------------------
+
+def poisson(goals, expected):
+    expected = max(0.05, expected)
     return math.exp(-expected) * expected**goals / math.factorial(goals)
 
 
@@ -265,29 +305,32 @@ def predict_match(df, home_team, away_team):
     league_away = max(0.1, float(df["Tore_Auswärts"].mean()))
 
     expected_home = (
-        (0.65 * home["tore"] + 0.35 * home_all["tore"]) / league_home
+        (0.65 * home["tore"] + 0.35 * home_all["tore"])
+        / league_home
     ) * (
-        0.65 * away["gegentreffer"] + 0.35 * away_all["gegentreffer"]
+        0.65 * away["gegentreffer"]
+        + 0.35 * away_all["gegentreffer"]
     )
 
     expected_away = (
-        (0.65 * away["tore"] + 0.35 * away_all["tore"]) / league_away
+        (0.65 * away["tore"] + 0.35 * away_all["tore"])
+        / league_away
     ) * (
-        0.65 * home["gegentreffer"] + 0.35 * home_all["gegentreffer"]
+        0.65 * home["gegentreffer"]
+        + 0.35 * home_all["gegentreffer"]
     )
 
-    expected_home = max(0.15, min(4.0, expected_home))
-    expected_away = max(0.15, min(4.0, expected_away))
+    expected_home = max(0.15, min(4.5, expected_home))
+    expected_away = max(0.15, min(4.5, expected_away))
 
-    p_home = p_draw = p_away = 0.0
+    p_home = 0.0
+    p_draw = 0.0
+    p_away = 0.0
     scores = []
 
     for hg in range(11):
         for ag in range(11):
-            prob = (
-                poisson_probability(hg, expected_home)
-                * poisson_probability(ag, expected_away)
-            )
+            prob = poisson(hg, expected_home) * poisson(ag, expected_away)
             scores.append((hg, ag, prob))
 
             if hg > ag:
@@ -299,30 +342,55 @@ def predict_match(df, home_team, away_team):
 
     total = p_home + p_draw + p_away
 
-    if total <= 0:
+    if total == 0:
         return None
 
     probabilities = [
         p_home / total,
         p_draw / total,
-        p_away / total,
+        p_away / total
     ]
 
     labels = ["Heimsieg", "Unentschieden", "Auswärtssieg"]
-    best = max(scores, key=lambda item: item[2])
+    best_score = max(scores, key=lambda item: item[2])
 
     return {
         "home": probabilities[0],
         "draw": probabilities[1],
         "away": probabilities[2],
         "winner": labels[probabilities.index(max(probabilities))],
-        "score": f"{best[0]} : {best[1]}",
+        "score": f"{best_score[0]} : {best_score[1]}",
         "expected_home": expected_home,
         "expected_away": expected_away,
     }
 
 
-# ---------------- NAVIGATION ----------------
+def outcome_chart(labels, values, title):
+    fig = go.Figure(go.Bar(
+        x=labels,
+        y=values,
+        marker_color=["#4be0a0", "#6bbf9a", "#328c6a"],
+        text=[f"{v:.1f}%" for v in values],
+        textposition="outside",
+    ))
+
+    fig.update_layout(
+        title=title,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#122238",
+        font=dict(color="#f4f7fb"),
+        height=350,
+        margin=dict(l=20, r=20, t=55, b=40),
+        yaxis=dict(gridcolor="#293f58", rangemode="tozero"),
+        xaxis=dict(gridcolor="#293f58"),
+        showlegend=False,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# -------------------- NAVIGATION --------------------
+
 st.sidebar.markdown("## ⚽ KickPredict AI")
 st.sidebar.caption("Deine Fussball-Analyseplattform")
 
@@ -338,27 +406,25 @@ page = st.sidebar.radio("Navigation", [
 st.sidebar.divider()
 st.sidebar.markdown("**Erstellt von**")
 st.sidebar.write("Tiago Faruk und Yigit")
-st.sidebar.caption("Prognosen sind Schätzungen, keine Garantien.")
+st.sidebar.caption("Statistische Prognosen, keine Garantien.")
 
 
-# ---------------- HOME ----------------
+# -------------------- HOME --------------------
+
 if page == "🏠 Home":
-    st.markdown("""
-    <div class="hero">
-        <div class="eyebrow">Football intelligence</div>
-        <h1>KickPredict AI</h1>
-        <p>Fussball verstehen. Zahlen analysieren. Spiele einschätzen.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    hero(
+        "KickPredict AI",
+        "Fussball verstehen. Zahlen analysieren. Spiele einschätzen."
+    )
 
     a, b, c = st.columns(3)
 
     with a:
-        metric("Datenquelle", "GitHub", "OpenFootball · öffentliche Daten")
+        metric("Datenquelle", "GitHub", "Kostenlos und ohne API-Key")
     with b:
-        metric("Prognose", "1X2", "Heim · Remis · Auswärts")
+        metric("Prognose", "1X2", "Heimsieg · Remis · Auswärtssieg")
     with c:
-        metric("Verfügbare Ligen", "5", "Europäische Topligen")
+        metric("Ligen", "5", "Europäische Topligen")
 
     st.markdown("### Entdecke die Plattform")
 
@@ -367,112 +433,92 @@ if page == "🏠 Home":
     with a:
         st.markdown("""
         <div class="panel">
-            <h3>🔮 Spielprognose</h3>
-            Wahrscheinlichkeiten für mögliche Spielausgänge.
+        <h3>🔮 Spielprognose</h3>
+        Berechne Wahrscheinlichkeiten und mögliche Resultate.
         </div>
         <div class="panel">
-            <h3>📊 Statistiken</h3>
-            Tore, Siege und Resultate auswerten.
+        <h3>📊 Statistiken</h3>
+        Entdecke Tore, Resultate und Teamvergleiche.
         </div>
         """, unsafe_allow_html=True)
 
     with b:
         st.markdown("""
         <div class="panel">
-            <h3>🧠 Team-Analyse</h3>
-            Form sowie Heim- und Auswärtsleistung.
+        <h3>🧠 Team-Analyse</h3>
+        Analysiere Form sowie Heim- und Auswärtsleistung.
         </div>
         <div class="panel">
-            <h3>📅 Ergebnisse</h3>
-            Abgeschlossene Spiele filtern und exportieren.
+        <h3>📅 Ergebnisse</h3>
+        Durchsuche Resultate und exportiere sie als CSV.
         </div>
         """, unsafe_allow_html=True)
 
     st.info(
-        "Die Resultate stammen aus öffentlichen GitHub-Dateien. "
-        "Eine bestimmte Prognose-Trefferquote wird nicht garantiert."
+        "Die Website verwendet öffentlich verfügbare Daten. "
+        "Eine bestimmte Trefferquote kann nicht garantiert werden."
     )
-    show_attribution()
+
+    attribution()
+
+
+# -------------------- ALLE ANDEREN SEITEN --------------------
 
 else:
-    st.markdown(f"""
-    <div class="hero">
-        <div class="eyebrow">KickPredict AI · Analytics</div>
-        <h1>{page}</h1>
-        <p>Fussballstatistiken und Resultate auf einen Blick.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    hero(page, "Fussballstatistiken und Resultate auf einen Blick.")
 
     league_name = st.selectbox(
         "Wettbewerb auswählen",
         list(LEAGUES.keys())
     )
 
-    left, right = st.columns([3, 1])
+    if st.button("🔄 Daten neu laden"):
+        load_matches.clear()
+        st.rerun()
 
-    with left:
-        st.caption(
-            f"Resultate der letzten {DAYS_BACK} Tage. "
-            "Zwischenspeicherung: fünf Minuten."
-        )
+    filename = LEAGUES[league_name]
 
-    with right:
-        if st.button("🔄 Aktualisieren", use_container_width=True):
-            load_matches.clear()
-            st.rerun()
-
-    if LEAGUES[league_name] is None:
+    if filename is None:
         st.warning(
-            f"{league_name} ist in dieser Version noch nicht "
-            "mit einer passenden GitHub-Datendatei verbunden."
+            "Dieser Wettbewerb ist noch nicht mit einer passenden "
+            "Datendatei verbunden. Wähle eine der fünf verfügbaren Ligen."
         )
-        st.info(
-            "Aktuell verfügbar: Premier League, La Liga, Bundesliga, "
-            "Serie A und Ligue 1."
-        )
-        show_attribution()
         st.stop()
 
-    try:
-        with st.spinner("Lade Resultate von GitHub …"):
-            df, errors = load_matches(LEAGUES[league_name])
-    except Exception as exc:
-        st.error(f"Die Daten konnten nicht geladen werden: {exc}")
-        show_attribution()
-        st.stop()
+    with st.spinner("Lade Fussballdaten von GitHub ..."):
+        df, errors = load_matches(filename)
 
     if df.empty:
-        st.warning(
-            f"Für **{league_name}** wurden in den letzten "
-            f"{DAYS_BACK} Tagen keine abgeschlossenen Spiele gefunden."
-        )
-        st.caption(
-            "Die öffentliche Datei kann fehlen, keine aktuellen Resultate "
-            "enthalten oder vorübergehend nicht erreichbar sein."
+        st.error(
+            "Es konnten keine abgeschlossenen Spiele geladen werden. "
+            "Prüfe die Internetverbindung oder versuche es später erneut."
         )
 
         if errors:
             with st.expander("Technische Details"):
-                st.write(errors[:5])
+                st.code("\n".join(errors[:10]))
 
-        show_attribution()
+        attribution()
         st.stop()
 
     teams = sorted(set(df["Heim"]) | set(df["Auswärts"]))
 
+    st.caption(
+        f"{len(df)} abgeschlossene Spiele aus {df['Saison'].nunique()} "
+        "Saisons geladen. Die Daten werden alle 10 Minuten aktualisiert."
+    )
+
     # ---------------- SPIELPROGNOSE ----------------
+
     if page == "🔮 Spielprognose":
         a, b, c = st.columns(3)
 
         with a:
             metric("Geladene Spiele", str(len(df)))
         with b:
-            metric("Saisons", str(df["Saison"].nunique()))
+            metric("Teams", str(len(teams)))
         with c:
-            metric(
-                "Letztes Spiel",
-                df["Datum"].max().strftime("%d.%m.%Y")
-            )
+            metric("Saisons", str(df["Saison"].nunique()))
 
         a, b = st.columns(2)
 
@@ -488,8 +534,8 @@ else:
 
             if result is None:
                 st.error(
-                    "Für diese Teams gibt es nicht genügend "
-                    "Heim-/Auswärtsdaten in den geladenen Resultaten."
+                    "Für diese Teams fehlen genügend Heim- oder "
+                    "Auswärtsresultate."
                 )
             else:
                 st.session_state["prediction"] = result
@@ -499,18 +545,18 @@ else:
 
         if "prediction" in st.session_state:
             result = st.session_state["prediction"]
-            h, a = st.session_state["prediction_teams"]
+            home_saved, away_saved = st.session_state["prediction_teams"]
 
             st.divider()
-            st.subheader(f"{h} vs. {a}")
+            st.subheader(f"{home_saved} vs. {away_saved}")
 
-            x, y, z = st.columns(3)
+            a, b, c = st.columns(3)
 
-            with x:
+            with a:
                 metric("Heimsieg", f"{result['home'] * 100:.1f}%")
-            with y:
+            with b:
                 metric("Unentschieden", f"{result['draw'] * 100:.1f}%")
-            with z:
+            with c:
                 metric("Auswärtssieg", f"{result['away'] * 100:.1f}%")
 
             outcome_chart(
@@ -520,16 +566,16 @@ else:
                     result["draw"] * 100,
                     result["away"] * 100,
                 ],
-                "Spielprognose",
+                "Wahrscheinlichkeit der Spielausgänge",
             )
 
-            x, y = st.columns(2)
+            a, b = st.columns(2)
 
-            with x:
+            with a:
                 st.markdown("**Wahrscheinlichster Ausgang**")
                 st.subheader(result["winner"])
 
-            with y:
+            with b:
                 st.markdown("**Geschätzter Spielstand**")
                 st.subheader(result["score"])
 
@@ -539,86 +585,75 @@ else:
             )
 
             st.warning(
-                "Statistische Schätzung, keine Garantie. "
-                "Für diese Version werden Resultate der letzten "
-                "30 Tage verwendet."
+                "Die Prognose basiert auf vergangenen Resultaten. "
+                "Verletzungen, Aufstellungen und andere aktuelle Faktoren "
+                "werden nicht automatisch berücksichtigt."
             )
 
     # ---------------- TEAM-ANALYSE ----------------
+
     elif page == "🧠 Team-Analyse":
         team = st.selectbox("Team auswählen", teams)
+        stats = team_stats(df, team)
 
-        overall = team_stats(df, team)
-        home_stats = team_stats(df, team, "home")
-        away_stats = team_stats(df, team, "away")
-
-        if overall:
+        if stats:
             a, b, c, d = st.columns(4)
 
             with a:
-                metric("Spiele", str(overall["spiele"]))
+                metric("Spiele", str(stats["spiele"]))
             with b:
-                metric("Ø Tore", f"{overall['tore']:.2f}")
+                metric("Ø Tore", f"{stats['tore']:.2f}")
             with c:
-                metric("Ø Gegentore", f"{overall['gegentreffer']:.2f}")
+                metric("Ø Gegentore", f"{stats['gegentreffer']:.2f}")
             with d:
-                metric(
-                    "Punkte",
-                    str(overall["punkte"]),
-                    "Letzte 12 geladene Spiele",
-                )
+                metric("Punkte", str(stats["punkte"]))
 
-            st.markdown("### Letzte Spiele: Form")
+            st.markdown("### Letzte Spiele")
 
             form = [
-                "S" if r["Eigen"] > r["Gegner"]
-                else "U" if r["Eigen"] == r["Gegner"]
+                "S" if row["Eigen"] > row["Gegner"]
+                else "U" if row["Eigen"] == row["Gegner"]
                 else "N"
-                for _, r in overall["form"].iterrows()
+                for _, row in stats["form"].iterrows()
             ]
 
             st.write(" – ".join(form))
             st.caption("S = Sieg · U = Unentschieden · N = Niederlage")
 
+            home_stats = team_stats(df, team, "home")
+            away_stats = team_stats(df, team, "away")
+
             comparison = pd.DataFrame({
-                "Kategorie": ["Ø Tore", "Ø Gegentore", "Spiele"],
+                "Kategorie": ["Ø Tore", "Ø Gegentore"],
                 "Heim": [
                     home_stats["tore"] if home_stats else 0,
                     home_stats["gegentreffer"] if home_stats else 0,
-                    home_stats["spiele"] if home_stats else 0,
                 ],
                 "Auswärts": [
                     away_stats["tore"] if away_stats else 0,
                     away_stats["gegentreffer"] if away_stats else 0,
-                    away_stats["spiele"] if away_stats else 0,
                 ],
             })
 
             st.markdown("### Heim- und Auswärtsvergleich")
             st.bar_chart(comparison.set_index("Kategorie"))
 
-            with st.expander("Resultate dieses Teams"):
-                games = df[
-                    (df["Heim"] == team) | (df["Auswärts"] == team)
-                ].copy()
-
-                games["Datum"] = (
-                    games["Datum"]
-                    .dt.tz_convert("Europe/Zurich")
-                    .dt.strftime("%d.%m.%Y")
-                )
-
-                st.dataframe(
-                    games.sort_values("Datum", ascending=False),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
     # ---------------- STATISTIKEN ----------------
+
     elif page == "📊 Statistiken":
-        home_goals = int(df["Tore_Heim"].sum())
-        away_goals = int(df["Tore_Auswärts"].sum())
-        total_goals = home_goals + away_goals
+        total_goals = int(
+            df["Tore_Heim"].sum() + df["Tore_Auswärts"].sum()
+        )
+
+        home_wins = int(
+            (df["Tore_Heim"] > df["Tore_Auswärts"]).sum()
+        )
+        draws = int(
+            (df["Tore_Heim"] == df["Tore_Auswärts"]).sum()
+        )
+        away_wins = int(
+            (df["Tore_Heim"] < df["Tore_Auswärts"]).sum()
+        )
 
         a, b, c, d = st.columns(4)
 
@@ -631,31 +666,21 @@ else:
         with d:
             metric(
                 "Heimsiegquote",
-                f"{(df['Tore_Heim'] > df['Tore_Auswärts']).mean() * 100:.1f}%"
+                f"{home_wins / len(df) * 100:.1f}%"
             )
-
-        hw = int((df["Tore_Heim"] > df["Tore_Auswärts"]).sum())
-        dr = int((df["Tore_Heim"] == df["Tore_Auswärts"]).sum())
-        aw = int((df["Tore_Heim"] < df["Tore_Auswärts"]).sum())
 
         outcome_chart(
             ["Heimsieg", "Unentschieden", "Auswärtssieg"],
-            [hw, dr, aw],
-            "Verteilung der Spielausgänge",
+            [home_wins, draws, away_wins],
+            "Spielausgänge",
         )
-
-        st.markdown("### Teams mit den meisten Toren")
 
         home_totals = df.groupby("Heim")["Tore_Heim"].sum()
         away_totals = df.groupby("Auswärts")["Tore_Auswärts"].sum()
         totals = home_totals.add(away_totals, fill_value=0)
 
-        chart_df = (
-            totals.sort_values(ascending=False)
-            .head(10)
-            .rename("Tore")
-            .reset_index()
-        )
+        top = totals.sort_values(ascending=False).head(10)
+        chart_df = top.rename("Tore").reset_index()
         chart_df.columns = ["Team", "Tore"]
 
         fig = px.bar(
@@ -663,42 +688,34 @@ else:
             x="Tore",
             y="Team",
             orientation="h",
-            color_discrete_sequence=[GREEN],
-            text="Tore",
+            color_discrete_sequence=["#4be0a0"],
         )
+
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor=DARK,
-            font=dict(color=TEXT),
+            plot_bgcolor="#122238",
+            font=dict(color="#f4f7fb"),
         )
+
+        st.markdown("### Teams mit den meisten Toren")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("### Spiele nach Saison")
-
-        summary = df.groupby("Saison").agg(
-            Spiele=("Heim", "count"),
-            Heimtore=("Tore_Heim", "sum"),
-            Auswärtstore=("Tore_Auswärts", "sum"),
-        )
-        summary["Tore insgesamt"] = (
-            summary["Heimtore"] + summary["Auswärtstore"]
-        )
-
-        st.dataframe(summary, use_container_width=True)
-
     # ---------------- ERGEBNISSE ----------------
-    elif page == "📅 Ergebnisse":
-        st.markdown("### Abgeschlossene Spiele durchsuchen")
 
+    elif page == "📅 Ergebnisse":
         team_filter = st.selectbox(
             "Team filtern",
             ["Alle Teams"] + teams
         )
 
-        years = sorted(df["Saison"].unique(), reverse=True)
+        season_options = sorted(
+            df["Saison"].unique().tolist(),
+            reverse=True
+        )
+
         season_filter = st.selectbox(
-            "Saison filtern",
-            ["Alle Saisons"] + [str(y) for y in years]
+            "Saison",
+            ["Alle Saisons"] + season_options
         )
 
         results = df.copy()
@@ -710,7 +727,7 @@ else:
             ]
 
         if season_filter != "Alle Saisons":
-            results = results[results["Saison"] == int(season_filter)]
+            results = results[results["Saison"] == season_filter]
 
         results["Datum"] = (
             results["Datum"]
@@ -728,49 +745,47 @@ else:
             ["Datum", "Heim", "Resultat", "Auswärts", "Saison"]
         ].sort_values("Datum", ascending=False)
 
-        st.caption(f"{len(display)} Spiele gefunden")
-
-        st.dataframe(
-            display,
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.write(f"**{len(display)} Resultate gefunden**")
+        st.dataframe(display, use_container_width=True, hide_index=True)
 
         st.download_button(
-            "⬇️ Ergebnisse als CSV exportieren",
+            "⬇️ Als CSV exportieren",
             data=display.to_csv(index=False).encode("utf-8-sig"),
             file_name="kickpredict_ergebnisse.csv",
             mime="text/csv",
         )
 
     # ---------------- ÜBER UNS ----------------
+
     elif page == "ℹ️ Über uns":
         st.markdown("### Unsere Idee")
 
         st.write(
-            "KickPredict AI ist ein Fussballanalyse-Projekt. "
-            "Verfügbare Resultate werden ausgewertet, um statistische "
-            "Schätzungen für mögliche Spielausgänge zu berechnen."
+            "KickPredict AI ist ein Fussballanalyse-Projekt, das "
+            "vergangene Resultate statistisch auswertet, um mögliche "
+            "Spielausgänge einzuschätzen."
         )
 
         st.markdown("### Unsere Kategorien")
-        st.write(
-            "- Home: Übersicht und Einstieg\n"
-            "- Spielprognose: Wahrscheinlichkeiten für 1X2\n"
-            "- Team-Analyse: Form und Teamleistung\n"
-            "- Statistiken: Tore und Spielausgänge\n"
-            "- Ergebnisse: Resultate filtern und exportieren"
-        )
+
+        st.write("""
+        - **Home:** Übersicht
+        - **Spielprognose:** Wahrscheinlichkeiten für 1X2
+        - **Team-Analyse:** Form und Leistung
+        - **Statistiken:** Tore und Spielausgänge
+        - **Ergebnisse:** Resultate und CSV-Export
+        """)
 
         st.markdown("### Erstellt von")
         st.markdown("## Tiago Faruk und Yigit")
 
         st.info(
-            "Die Prognosen sind statistische Schätzungen. "
-            "Sie garantieren keine bestimmte Trefferquote."
+            "Die Prognosen sind Schätzungen und garantieren "
+            "keine bestimmte Trefferquote."
         )
 
-    show_attribution()
+    attribution()
+
 
 st.sidebar.divider()
-st.sidebar.caption("KickPredict AI · Football analytics")
+st.sidebar.caption("KickPredict AI · Football Analytics")
