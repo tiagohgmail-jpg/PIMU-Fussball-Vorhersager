@@ -447,3 +447,1068 @@ def place_bet(username, fixture, selection, stake, odds):
         return False, f"Wette konnte nicht gespeichert werden: {exc}"
     finally:
         conn.close()
+
+
+# -------------------- API HILFSFUNKTIONEN --------------------
+
+def api_get(path, params=None):
+    """Fordert Daten von football-data.org an."""
+    if not FOOTBALL_API_KEY:
+        return None, "Der API-Schlüssel fehlt."
+
+    try:
+        response = requests.get(
+            f"https://api.football-data.org/v4/{path.lstrip('/')}",
+            headers={"X-Auth-Token": FOOTBALL_API_KEY},
+            params=params or {},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json(), None
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        if status == 403:
+            return None, (
+                "Die API erlaubt diesen Datenzugriff mit deinem aktuellen "
+                "Tarif möglicherweise nicht."
+            )
+        if status == 429:
+            return None, "API-Limit erreicht. Bitte später erneut versuchen."
+        return None, f"API-Fehler: HTTP {status}."
+    except requests.RequestException as exc:
+        return None, f"Verbindungsfehler: {exc}"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def api_matches(date_from, date_to):
+    if not FOOTBALL_API_KEY:
+        return [], "FOOTBALL_DATA_API_KEY fehlt."
+
+    rows = []
+    errors = []
+
+    for league_name, (code, _) in LEAGUES.items():
+        data, error = api_get(
+            f"competitions/{code}/matches",
+            {"dateFrom": date_from, "dateTo": date_to},
+        )
+
+        if error:
+            errors.append(f"{league_name}: {error}")
+            continue
+
+        for match in data.get("matches", []):
+            home = match.get("homeTeam") or {}
+            away = match.get("awayTeam") or {}
+            if not home.get("name") or not away.get("name"):
+                continue
+
+            score = match.get("score") or {}
+            full_time = score.get("fullTime") or {}
+            kickoff = pd.to_datetime(
+                match.get("utcDate"), errors="coerce", utc=True
+            )
+            if pd.isna(kickoff):
+                continue
+
+            rows.append({
+                "Datum": kickoff,
+                "Heim": home["name"],
+                "Auswärts": away["name"],
+                "Tore_Heim": full_time.get("home"),
+                "Tore_Auswärts": full_time.get("away"),
+                "Liga": league_name,
+                "Status": match.get("status", ""),
+                "Match_ID": str(match.get("id", "")),
+            })
+
+    return rows, "\n".join(errors) if errors else None
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def league_teams(code):
+    """Lädt die Teams einer Liga."""
+    data, error = api_get(f"competitions/{code}/teams")
+    if error:
+        return [], error
+    return data.get("teams", []), None
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def team_squad(team_id):
+    """Lädt Details und Kader eines Teams."""
+    data, error = api_get(f"teams/{team_id}")
+    if error:
+        return None, error
+    return data, None
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def team_recent_matches(team_id, date_from, date_to):
+    """Lädt kürzlich gespielte Partien eines Teams."""
+    data, error = api_get(
+        f"teams/{team_id}/matches",
+        {
+            "dateFrom": date_from,
+            "dateTo": date_to,
+            "status": "FINISHED",
+            "limit": 100,
+        },
+    )
+    if error:
+        return [], error
+    return data.get("matches", []), None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def historical_data(filename):
+    rows = []
+
+    for season in SEASONS:
+        try:
+            response = requests.get(
+                f"{BASE_URL}/{season}/{filename}",
+                timeout=15,
+            )
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+
+            for match in response.json().get("matches", []):
+                date = pd.to_datetime(
+                    match.get("date"), errors="coerce", utc=True
+                )
+                score = match.get("score") or {}
+                ft = score.get("ft") if isinstance(score, dict) else None
+
+                if (
+                    pd.isna(date)
+                    or not isinstance(ft, (list, tuple))
+                    or len(ft) != 2
+                    or ft[0] is None
+                    or ft[1] is None
+                ):
+                    continue
+
+                if date > pd.Timestamp.now(tz="UTC"):
+                    continue
+
+                rows.append({
+                    "Datum": date,
+                    "Heim": str(match.get("team1", "")),
+                    "Auswärts": str(match.get("team2", "")),
+                    "Tore_Heim": int(ft[0]),
+                    "Tore_Auswärts": int(ft[1]),
+                    "Saison": season,
+                })
+
+        except (requests.RequestException, ValueError, TypeError):
+            continue
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = (
+            df.drop_duplicates(subset=["Datum", "Heim", "Auswärts"])
+            .sort_values("Datum")
+        )
+    return df
+
+
+# -------------------- PROGNOSEMODELL --------------------
+
+def team_stats(df, team, venue=None, last_n=20):
+    if df.empty:
+        return None
+
+    home = df[df["Heim"] == team].copy()
+    away = df[df["Auswärts"] == team].copy()
+
+    home["Eigen"] = home["Tore_Heim"]
+    home["Gegner"] = home["Tore_Auswärts"]
+    away["Eigen"] = away["Tore_Auswärts"]
+    away["Gegner"] = away["Tore_Heim"]
+
+    if venue == "home":
+        games = home
+    elif venue == "away":
+        games = away
+    else:
+        games = pd.concat([home, away], ignore_index=True)
+
+    games = games.sort_values("Datum").tail(last_n)
+    if games.empty:
+        return None
+
+    wins = int((games["Eigen"] > games["Gegner"]).sum())
+    draws = int((games["Eigen"] == games["Gegner"]).sum())
+    losses = int((games["Eigen"] < games["Gegner"]).sum())
+
+    return {
+        "spiele": len(games),
+        "tore": float(games["Eigen"].mean()),
+        "gegentreffer": float(games["Gegner"].mean()),
+        "siege": wins,
+        "remis": draws,
+        "niederlagen": losses,
+        "punkte": wins * 3 + draws,
+    }
+
+
+def poisson(goals, expected):
+    expected = max(0.05, float(expected))
+    return math.exp(-expected) * expected**goals / math.factorial(goals)
+
+
+def predict_match(df, home_team, away_team):
+    if df.empty:
+        return None
+
+    home = team_stats(df, home_team, "home")
+    away = team_stats(df, away_team, "away")
+    home_all = team_stats(df, home_team)
+    away_all = team_stats(df, away_team)
+
+    if any(x is None for x in [home, away, home_all, away_all]):
+        return None
+
+    league_home = max(0.1, float(df["Tore_Heim"].mean()))
+    league_away = max(0.1, float(df["Tore_Auswärts"].mean()))
+
+    eh = (
+        (0.65 * home["tore"] + 0.35 * home_all["tore"]) / league_home
+    ) * (
+        0.65 * away["gegentreffer"] + 0.35 * away_all["gegentreffer"]
+    )
+
+    ea = (
+        (0.65 * away["tore"] + 0.35 * away_all["tore"]) / league_away
+    ) * (
+        0.65 * home["gegentreffer"] + 0.35 * home_all["gegentreffer"]
+    )
+
+    eh = max(0.15, min(4.5, eh))
+    ea = max(0.15, min(4.5, ea))
+
+    p_home = 0.0
+    p_draw = 0.0
+    p_away = 0.0
+    scores = []
+
+    for hg in range(11):
+        for ag in range(11):
+            probability = poisson(hg, eh) * poisson(ag, ea)
+            scores.append((hg, ag, probability))
+            if hg > ag:
+                p_home += probability
+            elif hg == ag:
+                p_draw += probability
+            else:
+                p_away += probability
+
+    total = p_home + p_draw + p_away
+    if total <= 0:
+        return None
+
+    p_home /= total
+    p_draw /= total
+    p_away /= total
+
+    probabilities = [p_home, p_draw, p_away]
+    labels = ["Heimsieg", "Unentschieden", "Auswärtssieg"]
+    best_score = max(scores, key=lambda x: x[2])
+
+    return {
+        "home": p_home,
+        "draw": p_draw,
+        "away": p_away,
+        "winner": labels[probabilities.index(max(probabilities))],
+        "score": f"{best_score[0]} : {best_score[1]}",
+        "expected_home": eh,
+        "expected_away": ea,
+    }
+
+
+def virtual_odds(result):
+    margin = 1.12
+    return {
+        "Heimsieg": round(
+            min(10, max(1.10, margin / max(result["home"], 0.01))), 2
+        ),
+        "Unentschieden": round(
+            min(10, max(1.10, margin / max(result["draw"], 0.01))), 2
+        ),
+        "Auswärtssieg": round(
+            min(10, max(1.10, margin / max(result["away"], 0.01))), 2
+        ),
+    }
+
+
+# -------------------- WETTEN ABRECHNEN --------------------
+
+def settle_bets(username, results_by_id):
+    conn = connect_db()
+    count = 0
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            qmark("""
+                SELECT id,fixture_id,selection,stake,odds
+                FROM bets
+                WHERE username=? AND status='Offen'
+            """),
+            (username,),
+        )
+
+        for bet_id, fixture_id, selection, stake, odds in cur.fetchall():
+            match = results_by_id.get(str(fixture_id))
+            if not match or match["Status"] != "FINISHED":
+                continue
+
+            hg = match["Tore_Heim"]
+            ag = match["Tore_Auswärts"]
+            if hg is None or ag is None:
+                continue
+
+            actual = (
+                "Heimsieg" if hg > ag
+                else "Unentschieden" if hg == ag
+                else "Auswärtssieg"
+            )
+
+            won = selection == actual
+            payout = int(round(int(stake) * float(odds))) if won else 0
+            status = "Gewonnen" if won else "Verloren"
+
+            cur.execute(
+                qmark("""
+                    UPDATE bets
+                    SET status=?,payout=?,result=?,settled_at=?
+                    WHERE id=? AND username=? AND status='Offen'
+                """),
+                (status, payout, f"{hg} : {ag}", utc_text(), bet_id, username),
+            )
+
+            if cur.rowcount and won:
+                cur.execute(
+                    qmark("UPDATE users SET coins=coins+? WHERE username=?"),
+                    (payout, username),
+                )
+
+            count += cur.rowcount
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return count
+
+
+# -------------------- DATENBANK STARTEN --------------------
+
+try:
+    init_db()
+except Exception as exc:
+    st.error("Datenbankfehler. Prüfe DATABASE_URL und die Datenbank.")
+    st.exception(exc)
+    st.stop()
+
+
+# -------------------- LOGIN --------------------
+
+def login_screen():
+    hero(
+        "Willkommen bei KickPredict AI",
+        "Melde dich an oder erstelle dein Konto.",
+    )
+
+    tab1, tab2 = st.tabs(["🔐 Anmelden", "✨ Konto erstellen"])
+
+    with tab1:
+        with st.form("login"):
+            username = st.text_input("Benutzername").strip().lower()
+            password = st.text_input("Passwort", type="password")
+            submit = st.form_submit_button("Anmelden", use_container_width=True)
+
+        if submit:
+            if verify_user(username, password):
+                st.session_state["user"] = username
+                st.rerun()
+            else:
+                st.error("Benutzername oder Passwort ist falsch.")
+
+    with tab2:
+        with st.form("register"):
+            new_user = st.text_input("Neuer Benutzername")
+            new_password = st.text_input(
+                "Passwort (mindestens 8 Zeichen)", type="password"
+            )
+            confirm = st.text_input("Passwort wiederholen", type="password")
+            submit = st.form_submit_button(
+                "Konto erstellen", use_container_width=True
+            )
+
+        if submit:
+            if new_password != confirm:
+                st.error("Die Passwörter stimmen nicht überein.")
+            else:
+                ok, message = create_user(new_user, new_password)
+                (st.success if ok else st.error)(message)
+
+    st.info("Jedes neue Konto startet mit 1'000 virtuellen Coins.")
+    attribution()
+
+
+if "user" not in st.session_state:
+    login_screen()
+    st.stop()
+
+username = st.session_state["user"]
+
+if username == "tiago":
+    try:
+        if give_tiago_bonus():
+            st.toast("🎁 999'999 Bonus-Coins wurden gutgeschrieben!")
+    except Exception as exc:
+        st.error(f"Der Bonus konnte nicht gutgeschrieben werden: {exc}")
+
+
+# -------------------- SIDEBAR / NAVIGATION --------------------
+
+st.sidebar.markdown("## ⚽ KickPredict AI")
+st.sidebar.caption(f"Angemeldet als **{username}**")
+st.sidebar.metric("Dein Spielgeld", f"{user_info(username):,} Coins")
+
+page = st.sidebar.radio(
+    "Navigation",
+    [
+        "🏠 Home",
+        "📅 Spiele nächste 30 Tage",
+        "🏟️ Teams & Kader",
+        "🎰 Virtuelle Wetten",
+        "💼 Mein Wettkonto",
+        "🔮 Spielprognose",
+        "🧠 Team-Analyse",
+        "📊 Statistiken",
+        "ℹ️ Über uns",
+    ],
+)
+
+if st.sidebar.button("🚪 Abmelden", use_container_width=True):
+    st.session_state.pop("user", None)
+    st.rerun()
+
+st.sidebar.markdown("**Erstellt von**")
+st.sidebar.write("Tiago Faruk und Yigit")
+
+
+# -------------------- SPIELE LADEN --------------------
+
+today = now_utc().date()
+
+api_rows, api_error = api_matches(
+    today.isoformat(),
+    (today + timedelta(days=30)).isoformat(),
+)
+
+results_by_id = {
+    str(row["Match_ID"]): row for row in api_rows
+}
+
+try:
+    settle_bets(username, results_by_id)
+except Exception as exc:
+    st.warning(f"Abrechnung aktuell nicht möglich: {exc}")
+
+
+# -------------------- HOME --------------------
+
+if page == "🏠 Home":
+    hero(
+        "KickPredict AI",
+        "Fussball analysieren. Prognosen erstellen. Virtuelle Coins sammeln.",
+    )
+
+    bets = get_bets(username)
+    a, b, c = st.columns(3)
+
+    with a:
+        metric("Dein Guthaben", f"{user_info(username):,}", "Virtuelle Coins")
+    with b:
+        metric("Alle Wetten", str(len(bets)))
+    with c:
+        open_bets = int((bets["status"] == "Offen").sum()) if not bets.empty else 0
+        metric("Offene Wetten", str(open_bets))
+
+    st.markdown("### Willkommen")
+    st.write(
+        "Entdecke Teams und Kader, sieh dir die Spiele der nächsten 30 Tage an "
+        "und berechne statistische Prognosen."
+    )
+    st.info("Prognosen sind Schätzungen und garantieren keine Trefferquote.")
+    attribution()
+
+
+# -------------------- SPIELE DER NÄCHSTEN 30 TAGE --------------------
+
+elif page == "📅 Spiele nächste 30 Tage":
+    hero(
+        "Spielkalender",
+        "Alle verfügbaren Spiele der fünf Ligen in den nächsten 30 Tagen.",
+    )
+
+    if not FOOTBALL_API_KEY:
+        st.error("Es fehlt dein football-data.org API-Schlüssel.")
+        st.markdown(
+            "Registriere dich unter "
+            "[football-data.org](https://www.football-data.org/client/register) "
+            "und speichere den Schlüssel in Streamlit Secrets."
+        )
+        st.code('FOOTBALL_DATA_API_KEY = "DEIN_API_SCHLUESSEL"')
+        st.stop()
+
+    if api_error:
+        st.warning(api_error)
+
+    future = [
+        m for m in api_rows
+        if m["Datum"] >= pd.Timestamp.now(tz="UTC")
+        and m["Datum"] <= pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=30)
+        and m["Status"] in ("SCHEDULED", "TIMED")
+    ]
+
+    if not future:
+        st.info(
+            "Es wurden keine kommenden Spiele gefunden. "
+            "Prüfe deinen API-Zugang oder lade die Seite später erneut."
+        )
+    else:
+        league_filter = st.selectbox(
+            "Liga filtern",
+            ["Alle Ligen"] + list(LEAGUES.keys()),
+        )
+
+        if league_filter != "Alle Ligen":
+            future = [m for m in future if m["Liga"] == league_filter]
+
+        future = sorted(future, key=lambda m: m["Datum"])
+
+        rows = []
+        for m in future:
+            rows.append({
+                "Datum": m["Datum"].tz_convert("Europe/Zurich").strftime(
+                    "%d.%m.%Y %H:%M"
+                ),
+                "Liga": m["Liga"],
+                "Heimteam": m["Heim"],
+                "Auswärtsteam": m["Auswärts"],
+                "Anpfiff": m["Status"],
+            })
+
+        st.metric("Gefundene Spiele", len(rows))
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.download_button(
+            "⬇️ Spielplan als CSV",
+            pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"),
+            file_name="kickpredict_spielplan_30_tage.csv",
+            mime="text/csv",
+        )
+
+
+# -------------------- TEAMS UND KADER --------------------
+
+elif page == "🏟️ Teams & Kader":
+    hero(
+        "Teams & Kader",
+        "Entdecke Vereine, Spieler und verfügbare Aufstellungsinformationen.",
+    )
+
+    if not FOOTBALL_API_KEY:
+        st.error("Für Team- und Kaderdaten wird ein API-Schlüssel benötigt.")
+        st.markdown(
+            "Registriere dich unter "
+            "[football-data.org](https://www.football-data.org/client/register)."
+        )
+        st.code('FOOTBALL_DATA_API_KEY = "DEIN_API_SCHLUESSEL"')
+        st.stop()
+
+    selected_league = st.selectbox("Liga wählen", list(LEAGUES))
+    league_code = LEAGUES[selected_league][0]
+
+    with st.spinner("Teams werden geladen ..."):
+        teams, teams_error = league_teams(league_code)
+
+    if teams_error:
+        st.error(teams_error)
+        st.info(
+            "Ob die API Teams bereitstellt, hängt von deinem API-Tarif ab."
+        )
+        st.stop()
+
+    if not teams:
+        st.warning("Für diese Liga wurden keine Teams geliefert.")
+        st.stop()
+
+    team_labels = {
+        f"{team.get('name', 'Unbekannt')}": team
+        for team in sorted(teams, key=lambda t: t.get("name", ""))
+    }
+
+    selected_name = st.selectbox("Team auswählen", list(team_labels))
+    selected_team = team_labels[selected_name]
+
+    crest = selected_team.get("crest")
+    if crest:
+        left, right = st.columns([1, 4])
+        with left:
+            st.image(crest, width=110)
+        with right:
+            st.subheader(selected_name)
+            st.write(selected_team.get("venue") or "Stadion nicht angegeben")
+            website = selected_team.get("website")
+            if website:
+                st.markdown(f"[Offizielle Website]({website})")
+    else:
+        st.subheader(selected_name)
+
+    with st.spinner("Kaderdaten werden geladen ..."):
+        detail, detail_error = team_squad(selected_team["id"])
+
+    if detail_error:
+        st.warning(
+            "Der vollständige Kader konnte nicht geladen werden. "
+            "Dein API-Tarif bietet möglicherweise keinen Zugriff auf diese Daten."
+        )
+    else:
+        squad = detail.get("squad") or []
+
+        if squad:
+            st.markdown("### 👥 Spielerkader")
+
+            squad_rows = []
+            for player in squad:
+                squad_rows.append({
+                    "Spieler": player.get("name", "Unbekannt"),
+                    "Position": player.get("position") or "Nicht angegeben",
+                    "Nationalität": player.get("nationality") or "Nicht angegeben",
+                    "Geburtsdatum": player.get("dateOfBirth") or "Nicht angegeben",
+                    "Rolle": player.get("role") or "Nicht angegeben",
+                })
+
+            squad_df = pd.DataFrame(squad_rows)
+            st.metric("Spieler im gelieferten Kader", len(squad_df))
+
+            position_filter = st.selectbox(
+                "Position filtern",
+                ["Alle Positionen"] + sorted(
+                    p for p in squad_df["Position"].unique()
+                    if p and p != "Nicht angegeben"
+                ),
+            )
+
+            if position_filter != "Alle Positionen":
+                squad_df = squad_df[squad_df["Position"] == position_filter]
+
+            st.dataframe(
+                squad_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.download_button(
+                "⬇️ Kader als CSV",
+                squad_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"{selected_name.replace(' ', '_')}_kader.csv",
+                mime="text/csv",
+            )
+        else:
+            st.warning(
+                "Die API hat für dieses Team keinen Kader zurückgegeben."
+            )
+
+    st.markdown("---")
+    st.markdown("### 🧠 Häufigste Startelf")
+
+    st.write(
+        "Die zuverlässige Berechnung einer meistgespielten Startelf benötigt "
+        "historische Aufstellungsdaten für einzelne Spiele. Diese Daten sind "
+        "nicht bei jedem API-Tarif verfügbar."
+    )
+
+    date_to = now_utc().date()
+    date_from = date_to - timedelta(days=180)
+
+    if st.button("Aufstellungsdaten prüfen"):
+        with st.spinner("Vergangene Spiele werden geprüft ..."):
+            past_matches, past_error = team_recent_matches(
+                selected_team["id"],
+                date_from.isoformat(),
+                date_to.isoformat(),
+            )
+
+        if past_error:
+            st.warning(past_error)
+        elif not past_matches:
+            st.info("Keine abgeschlossenen Spiele im abgefragten Zeitraum gefunden.")
+        else:
+            st.write(f"Gefundene abgeschlossene Spiele: {len(past_matches)}")
+            st.info(
+                "Die Team-Spielhistorie enthält nicht automatisch die Startelf "
+                "jedes Spiels. Wenn die API keine Aufstellungen liefert, kann "
+                "die häufigste Startelf nicht seriös berechnet werden."
+            )
+
+            recent_rows = []
+            for match in sorted(
+                past_matches,
+                key=lambda x: x.get("utcDate", ""),
+                reverse=True,
+            )[:10]:
+                home = (match.get("homeTeam") or {}).get("name", "?")
+                away = (match.get("awayTeam") or {}).get("name", "?")
+                date = match.get("utcDate", "")[:10]
+                score = (match.get("score") or {}).get("fullTime") or {}
+                hg = score.get("home")
+                ag = score.get("away")
+                result = f"{hg} : {ag}" if hg is not None and ag is not None else "–"
+
+                recent_rows.append({
+                    "Datum": date,
+                    "Heimteam": home,
+                    "Auswärtsteam": away,
+                    "Resultat": result,
+                })
+
+            st.markdown("#### Letzte abgeschlossene Spiele")
+            st.dataframe(
+                pd.DataFrame(recent_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    st.caption(
+        "Kaderdaten und Aufstellungen können unvollständig sein. "
+        "Die verfügbaren Daten hängen von football-data.org ab."
+    )
+
+
+# -------------------- VIRTUELLE WETTEN --------------------
+
+elif page == "🎰 Virtuelle Wetten":
+    hero(
+        "Virtuelle Wetten",
+        "Wähle Spiele der nächsten 30 Tage und setze virtuelle Coins.",
+    )
+
+    if not FOOTBALL_API_KEY:
+        st.error("Es fehlt der API-Schlüssel für kommende Spiele und Resultate.")
+        st.markdown(
+            "Registrierung: [football-data.org]"
+            "(https://www.football-data.org/client/register)"
+        )
+        st.code('FOOTBALL_DATA_API_KEY = "DEIN_API_SCHLUESSEL"')
+        st.stop()
+
+    if api_error:
+        st.warning(api_error)
+
+    now = pd.Timestamp.now(tz="UTC")
+    fixtures = [
+        row for row in api_rows
+        if row["Status"] in ("SCHEDULED", "TIMED")
+        and now <= row["Datum"] <= now + pd.Timedelta(days=30)
+    ]
+
+    if not fixtures:
+        st.warning("Keine verfügbaren kommenden Spiele gefunden.")
+    else:
+        chosen_league = st.selectbox("Liga wählen", list(LEAGUES))
+        league_fixtures = [m for m in fixtures if m["Liga"] == chosen_league]
+
+        if not league_fixtures:
+            st.info("In dieser Liga gibt es im Zeitraum keine kommenden Spiele.")
+        else:
+            labels = [
+                f"{m['Datum'].tz_convert('Europe/Zurich').strftime('%d.%m. %H:%M')} · "
+                f"{m['Heim']} – {m['Auswärts']}"
+                for m in league_fixtures
+            ]
+
+            selected = st.selectbox(
+                "Spiel auswählen",
+                range(len(labels)),
+                format_func=lambda i: labels[i],
+            )
+            match = league_fixtures[selected]
+            hist = historical_data(LEAGUES[chosen_league][1])
+
+            if hist.empty:
+                st.warning("Historische Resultate sind momentan nicht verfügbar.")
+                st.stop()
+
+            hist = hist[hist["Datum"] < match["Datum"]]
+            prediction = predict_match(hist, match["Heim"], match["Auswärts"])
+
+            if not prediction:
+                st.warning(
+                    "Für mindestens eines der Teams fehlen genügend historische Daten."
+                )
+                st.stop()
+
+            odds = virtual_odds(prediction)
+            st.subheader(f"{match['Heim']} vs. {match['Auswärts']}")
+
+            local_time = match["Datum"].tz_convert("Europe/Zurich")
+            st.caption(
+                f"Anpfiff: {local_time.strftime('%d.%m.%Y, %H:%M')} Schweizer Zeit"
+            )
+
+            a, b, c = st.columns(3)
+            with a:
+                metric("1 · Heimsieg", f"{prediction['home'] * 100:.1f}%",
+                       f"Quote {odds['Heimsieg']:.2f}")
+            with b:
+                metric("X · Unentschieden", f"{prediction['draw'] * 100:.1f}%",
+                       f"Quote {odds['Unentschieden']:.2f}")
+            with c:
+                metric("2 · Auswärtssieg", f"{prediction['away'] * 100:.1f}%",
+                       f"Quote {odds['Auswärtssieg']:.2f}")
+
+            with st.form("place_bet"):
+                selection = st.radio(
+                    "Dein Tipp",
+                    ["Heimsieg", "Unentschieden", "Auswärtssieg"],
+                    horizontal=True,
+                )
+                stake = st.number_input(
+                    "Einsatz in Coins",
+                    min_value=1,
+                    max_value=MAX_STAKE,
+                    value=100,
+                    step=10,
+                )
+                st.write(f"Quote: **{odds[selection]:.2f}**")
+                st.write(
+                    "Mögliche Gesamtauszahlung: "
+                    f"**{int(round(stake * odds[selection])):,} Coins**"
+                )
+                confirmed = st.checkbox(
+                    "Ich bestätige: Das ist nur virtuelles Spielgeld."
+                )
+                submit = st.form_submit_button(
+                    "🎯 Wette platzieren", use_container_width=True
+                )
+
+            if submit:
+                if not confirmed:
+                    st.error("Bitte bestätige zuerst die Nutzung von virtuellem Spielgeld.")
+                else:
+                    ok, message = place_bet(
+                        username, match, selection, int(stake), odds[selection]
+                    )
+                    (st.success if ok else st.error)(message)
+                    if ok:
+                        st.rerun()
+
+    st.markdown("### Deine letzten Wetten")
+    bets = get_bets(username)
+    if bets.empty:
+        st.info("Du hast noch keine Wetten platziert.")
+    else:
+        st.dataframe(
+            bets.drop(columns=["fixture_id"], errors="ignore"),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+# -------------------- WETTKONTO --------------------
+
+elif page == "💼 Mein Wettkonto":
+    hero("Mein Wettkonto", "Deine virtuellen Coins und deine Wettstatistik.")
+
+    bets = get_bets(username)
+    settled = (
+        bets[bets["status"].isin(["Gewonnen", "Verloren"])]
+        if not bets.empty else pd.DataFrame()
+    )
+
+    won = int((settled["status"] == "Gewonnen").sum()) if not settled.empty else 0
+    lost = int((settled["status"] == "Verloren").sum()) if not settled.empty else 0
+    net = int(settled["payout"].sum() - settled["stake"].sum()) if not settled.empty else 0
+
+    a, b, c, d = st.columns(4)
+    with a:
+        metric("Guthaben", f"{user_info(username):,}", "Coins")
+    with b:
+        metric("Gewonnen", str(won))
+    with c:
+        metric("Verloren", str(lost))
+    with d:
+        metric("Netto", f"{net:+,}", "Coins")
+
+    if bets.empty:
+        st.info("Noch keine Wetten vorhanden.")
+    else:
+        st.dataframe(
+            bets.drop(columns=["fixture_id"], errors="ignore"),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.download_button(
+            "⬇️ Wettverlauf als CSV",
+            bets.to_csv(index=False).encode("utf-8-sig"),
+            file_name="kickpredict_wettverlauf.csv",
+            mime="text/csv",
+        )
+
+
+# -------------------- SPIELPROGNOSE --------------------
+
+elif page == "🔮 Spielprognose":
+    hero("Spielprognose", "Wahrscheinlichkeiten aus vergangenen Resultaten.")
+
+    league = st.selectbox("Liga", list(LEAGUES), key="prediction_league")
+    hist = historical_data(LEAGUES[league][1])
+
+    if hist.empty:
+        st.warning("Keine historischen Resultate verfügbar.")
+        st.stop()
+
+    teams = sorted(set(hist["Heim"]) | set(hist["Auswärts"]))
+    home = st.selectbox("Heimteam", teams)
+    away = st.selectbox("Auswärtsteam", [t for t in teams if t != home])
+
+    if st.button("Prognose berechnen"):
+        result = predict_match(hist, home, away)
+        if result:
+            st.session_state["prediction_result"] = result
+            st.session_state["prediction_pair"] = (home, away)
+        else:
+            st.error("Nicht genügend Daten.")
+
+    if "prediction_result" in st.session_state:
+        result = st.session_state["prediction_result"]
+        saved_home, saved_away = st.session_state["prediction_pair"]
+        st.subheader(f"{saved_home} vs. {saved_away}")
+
+        a, b, c = st.columns(3)
+        with a:
+            metric("Heimsieg", f"{result['home'] * 100:.1f}%")
+        with b:
+            metric("Unentschieden", f"{result['draw'] * 100:.1f}%")
+        with c:
+            metric("Auswärtssieg", f"{result['away'] * 100:.1f}%")
+
+        fig = go.Figure(go.Bar(
+            x=["Heimsieg", "Unentschieden", "Auswärtssieg"],
+            y=[result["home"] * 100, result["draw"] * 100, result["away"] * 100],
+            marker_color=["#4be0a0", "#6bbf9a", "#328c6a"],
+        ))
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#122238",
+            font=dict(color="#f4f7fb"),
+            yaxis_title="Wahrscheinlichkeit (%)",
+            yaxis=dict(range=[0, 100]),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.write("Wahrscheinlichster Ausgang:", result["winner"])
+        st.write("Geschätzter Spielstand:", result["score"])
+        st.caption("Die Prozentwerte sind statistische Schätzungen und keine Garantie.")
+
+
+# -------------------- TEAM-ANALYSE --------------------
+
+elif page == "🧠 Team-Analyse":
+    hero("Team-Analyse", "Form und Torstatistik.")
+
+    league = st.selectbox("Liga", list(LEAGUES), key="team_league")
+    hist = historical_data(LEAGUES[league][1])
+
+    if hist.empty:
+        st.warning("Keine Daten verfügbar.")
+        st.stop()
+
+    team = st.selectbox(
+        "Team", sorted(set(hist["Heim"]) | set(hist["Auswärts"]))
+    )
+    stats = team_stats(hist, team)
+
+    if stats:
+        a, b, c, d = st.columns(4)
+        with a:
+            metric("Spiele", str(stats["spiele"]))
+        with b:
+            metric("Ø Tore", f"{stats['tore']:.2f}")
+        with c:
+            metric("Ø Gegentore", f"{stats['gegentreffer']:.2f}")
+        with d:
+            metric("Punkte", str(stats["punkte"]))
+
+
+# -------------------- STATISTIKEN --------------------
+
+elif page == "📊 Statistiken":
+    hero("Statistiken", "Ligaweite Tore und Spielausgänge.")
+
+    league = st.selectbox("Liga", list(LEAGUES), key="stats_league")
+    hist = historical_data(LEAGUES[league][1])
+
+    if hist.empty:
+        st.warning("Keine Resultate verfügbar.")
+        st.stop()
+
+    total = len(hist)
+    goals = int(hist["Tore_Heim"].sum() + hist["Tore_Auswärts"].sum())
+    home_wins = int((hist["Tore_Heim"] > hist["Tore_Auswärts"]).sum())
+    draws = int((hist["Tore_Heim"] == hist["Tore_Auswärts"]).sum())
+    away_wins = int((hist["Tore_Heim"] < hist["Tore_Auswärts"]).sum())
+
+    a, b, c = st.columns(3)
+    with a:
+        metric("Spiele", str(total))
+    with b:
+        metric("Tore insgesamt", str(goals))
+    with c:
+        metric("Tore pro Spiel", f"{goals / total:.2f}")
+
+    fig = px.pie(
+        names=["Heimsieg", "Unentschieden", "Auswärtssieg"],
+        values=[home_wins, draws, away_wins],
+        hole=0.5,
+    )
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#f4f7fb"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# -------------------- ÜBER UNS --------------------
+
+elif page == "ℹ️ Über uns":
+    hero("Über uns", "Das Projekt hinter KickPredict AI.")
+
+    st.markdown("### Unsere Idee")
+    st.write(
+        "KickPredict AI wertet vergangene Fussballresultate aus und erstellt "
+        "statistische Prognosen. Das virtuelle Wettkonto ist zum spielerischen "
+        "Testen von Tipps mit Spielgeld gedacht."
+    )
+
+    st.markdown("### Erstellt von")
+    st.subheader("Tiago Faruk und Yigit")
+    st.info(
+        "Keine Echtgeldwetten, keine Einzahlungen und keine garantierten Prognosen."
+    )
+
+attribution()
